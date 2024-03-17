@@ -1,11 +1,13 @@
 package main
 
 import (
+	"acorn/grpc"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"net/http"
 	"time"
@@ -27,10 +29,10 @@ func (e ReponseError) Error() string {
 }
 
 type Response struct {
-	Hash    string    `json:"Hash"`
-	Payload []byte    `json:"Payload"`
-	Start   time.Time `json:"Start"`
-	End     time.Time `json:"End"`
+	Hash    string    `json:"hash"`
+	Payload []byte    `json:"payload"`
+	Start   time.Time `json:"start"`
+	End     time.Time `json:"end"`
 	Err     error     `json:"error"`
 }
 
@@ -107,4 +109,32 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+type grpcServer struct {
+	grpc.UnimplementedAcornServer
+}
+
+func (s *grpcServer) Request(ctx context.Context, in *grpc.Request) (*grpc.Response, error) {
+	request := Request{
+		RequestTime: int(in.RequestTime),
+		PayloadSize: int(in.PayloadSize),
+		Timeout:     in.Timeout,
+		Fail:        in.Fail,
+	}
+
+	response := handleRequest(request)
+
+	var err string
+	if response.Err != nil {
+		err = response.Err.Error()
+	}
+
+	return &grpc.Response{
+		Hash:    response.Hash,
+		Payload: string(response.Payload[:]),
+		Start:   timestamppb.New(response.Start),
+		End:     timestamppb.New(response.End),
+		Error:   err,
+	}, nil
 }
