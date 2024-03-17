@@ -3,8 +3,6 @@ package proto;
 
 option go_package = "./;grpc";
 
-import "google/protobuf/timestamp.proto";
-
 service Acorn {
   rpc request(Request) returns (Response);
 }
@@ -18,8 +16,8 @@ message Request {
 
 message Response {
   string hash = 1;
-  string payload = 2;
-  google.protobuf.Timestamp start = 3;
-  google.protobuf.Timestamp end = 4;
+  bytes payload = 2;
+  string start = 3;
+  string end = 4;
   string error = 5;
 }

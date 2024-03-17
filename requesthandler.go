@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"net/http"
 	"time"
@@ -132,9 +131,9 @@ func (s *grpcServer) Request(ctx context.Context, in *grpc.Request) (*grpc.Respo
 
 	return &grpc.Response{
 		Hash:    response.Hash,
-		Payload: string(response.Payload[:]),
-		Start:   timestamppb.New(response.Start),
-		End:     timestamppb.New(response.End),
+		Payload: response.Payload,
+		Start:   response.Start.Format(time.RFC3339Nano),
+		End:     response.End.Format(time.RFC3339Nano),
 		Error:   err,
 	}, nil
 }
