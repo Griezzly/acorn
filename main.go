@@ -8,37 +8,70 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 )
 
 const httpPort = "2525"
 const grpcPort = "2626"
 
+var wg = &sync.WaitGroup{}
+
 func main() {
+	if err := run(); err != nil {
+		log.Fatal("Fatal error, acorn terminating", err)
+		os.Exit(1)
+	}
+	wg.Wait()
+}
+
+func run() error {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	mux := http.NewServeMux()
+	errChan := make(chan error, 3)
 
-	log.Println("Starting HTTP server on port " + httpPort)
+	// run HTTP server in go routine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		mux := http.NewServeMux()
 
-	mux.HandleFunc("/", httpHandler)
+		log.Println("Starting HTTP server on port " + httpPort)
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-	})
-	mux.Handle("/metrics", promhttp.Handler())
+		mux.HandleFunc("/", httpHandler)
 
-	err := http.ListenAndServe(":"+httpPort, mux)
-	if err != nil {
-		fmt.Println("Server error:", err)
-	}
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		})
+		mux.Handle("/metrics", promhttp.Handler())
 
-	lis, err := net.Listen("tcp", grpcPort)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-	s := grpc.NewServer()
-	acorngrpc.RegisterAcornServer(s, &grpcServer{})
-	log.Printf("server listening at %v", lis.Addr())
-	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
-	}
+		errChan <- http.ListenAndServe(":"+httpPort, mux)
+	}()
+
+	// run grpc server in go routine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		lis, err := net.Listen("tcp", ":"+grpcPort)
+		if err != nil {
+			log.Fatalf("failed to listen: %v", err)
+			return
+		}
+		s := grpc.NewServer()
+		acorngrpc.RegisterAcornServer(s, &grpcServer{})
+		log.Printf("server listening at %v", lis.Addr())
+		errChan <- s.Serve(lis)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+		errChan <- fmt.Errorf("%s", <-c)
+	}()
+
+	log.Fatal("Acorn terminated ", <-errChan)
+	return nil
 }
