@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -17,6 +19,7 @@ type Request struct {
 	PayloadSize int  `json:"payloadSize"` // bytes
 	Timeout     bool `json:"timeout"`
 	Fail        bool `json:"fail"`
+	LoadCPU     int  `json:"loadCPU"`
 }
 
 type ReponseError struct {
@@ -52,10 +55,67 @@ func generateRandomBytes(numBytes int) ([]byte, error) {
 	return randomBytes, nil
 }
 
+var (
+	stopCh    = make(chan struct{})
+	stopped   = make(chan struct{})
+	closeOnce sync.Once
+	cpuLoaded bool
+	stopFlag  bool
+)
+
+func loadCpu(percentage float64) {
+	numCPU := runtime.NumCPU()
+	totalLoad := int(percentage)
+	partialLoad := percentage - float64(totalLoad)
+	var wg sync.WaitGroup
+
+	for i := 0; i < numCPU; i++ {
+		coreLoad := totalLoad / numCPU
+		if i < int(partialLoad*float64(numCPU)) {
+			coreLoad++
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stopCh:
+					return
+				default:
+					start := time.Now()
+
+					for time.Since(start).Seconds() < float64(coreLoad)/100.0 {
+						// Busy-wait to simulate CPU load
+					}
+
+					time.Sleep(time.Duration(100-coreLoad) * time.Millisecond)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func unloadCPU() {
+	closeOnce.Do(func() {
+		close(stopCh)
+	})
+}
+
 func handleRequest(request Request) Response {
 	begin := time.Now()
 	requestHash := computeHash(request, begin)
 	log.Println(requestHash + " - request received")
+	if request.LoadCPU > 0 {
+		go loadCpu(float64(request.LoadCPU))
+		cpuLoaded = true
+	}
+	if cpuLoaded && request.LoadCPU == 0 {
+		unloadCPU()
+		cpuLoaded = false
+	}
 	time.Sleep(time.Duration(request.RequestTime) * time.Millisecond)
 	if request.Fail {
 		return Response{Hash: requestHash, Err: ReponseError{"forced failure"}}
