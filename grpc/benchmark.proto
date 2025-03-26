@@ -1,0 +1,37 @@
+syntax = "proto3";
+option go_package = "./;grpc";
+
+package benchmark;
+
+service BenchmarkOrchestrator {
+  rpc RegisterNode(NodeInfo) returns (RegisterResponse);
+  rpc SendExecutionPlan(ExecutionPlan) returns (ExecutionAck);
+  rpc CollectLogs(LogRequest) returns (LogData);
+}
+
+message NodeInfo {
+  string node_id = 1;
+  string ip = 2;
+  string specs = 3;
+}
+
+message RegisterResponse {
+  string status = 1;
+}
+
+message ExecutionPlan {
+  string node_id = 1;
+  string plan = 2;
+}
+
+message ExecutionAck {
+  string status = 1;
+}
+
+message LogRequest {
+  string node_id = 1;
+}
+
+message LogData {
+  string logs = 1;
+}
