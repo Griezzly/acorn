@@ -22,6 +22,7 @@ message RegisterResponse {
 message ExecutionPlan {
   string node_id = 1;
   string plan = 2;
+  int64 start_time = 3; // Unix epoch in milliseconds
 }
 
 message ExecutionAck {

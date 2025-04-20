@@ -44,6 +44,7 @@ func main() {
 	orchestrator := &orchestratorServer{
 		nodes: make(map[string]*pb.NodeInfo),
 	}
+
 	pb.RegisterBenchmarkOrchestratorServer(s, orchestrator)
 	log.Println("Orchestrator server listening on :50051")
 	if err := s.Serve(lis); err != nil {
