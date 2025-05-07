@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -19,9 +20,8 @@ import (
 const _ = grpc.SupportPackageIsVersion8
 
 const (
-	BenchmarkOrchestrator_RegisterNode_FullMethodName      = "/benchmark.BenchmarkOrchestrator/RegisterNode"
-	BenchmarkOrchestrator_SendExecutionPlan_FullMethodName = "/benchmark.BenchmarkOrchestrator/SendExecutionPlan"
-	BenchmarkOrchestrator_CollectLogs_FullMethodName       = "/benchmark.BenchmarkOrchestrator/CollectLogs"
+	BenchmarkOrchestrator_RegisterNode_FullMethodName = "/benchmark.BenchmarkOrchestrator/RegisterNode"
+	BenchmarkOrchestrator_CollectLogs_FullMethodName  = "/benchmark.BenchmarkOrchestrator/CollectLogs"
 )
 
 // BenchmarkOrchestratorClient is the client API for BenchmarkOrchestrator service.
@@ -29,7 +29,6 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BenchmarkOrchestratorClient interface {
 	RegisterNode(ctx context.Context, in *NodeInfo, opts ...grpc.CallOption) (*RegisterResponse, error)
-	SendExecutionPlan(ctx context.Context, in *ExecutionPlan, opts ...grpc.CallOption) (*ExecutionAck, error)
 	CollectLogs(ctx context.Context, in *LogRequest, opts ...grpc.CallOption) (*LogData, error)
 }
 
@@ -51,16 +50,6 @@ func (c *benchmarkOrchestratorClient) RegisterNode(ctx context.Context, in *Node
 	return out, nil
 }
 
-func (c *benchmarkOrchestratorClient) SendExecutionPlan(ctx context.Context, in *ExecutionPlan, opts ...grpc.CallOption) (*ExecutionAck, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ExecutionAck)
-	err := c.cc.Invoke(ctx, BenchmarkOrchestrator_SendExecutionPlan_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *benchmarkOrchestratorClient) CollectLogs(ctx context.Context, in *LogRequest, opts ...grpc.CallOption) (*LogData, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(LogData)
@@ -76,7 +65,6 @@ func (c *benchmarkOrchestratorClient) CollectLogs(ctx context.Context, in *LogRe
 // for forward compatibility
 type BenchmarkOrchestratorServer interface {
 	RegisterNode(context.Context, *NodeInfo) (*RegisterResponse, error)
-	SendExecutionPlan(context.Context, *ExecutionPlan) (*ExecutionAck, error)
 	CollectLogs(context.Context, *LogRequest) (*LogData, error)
 	mustEmbedUnimplementedBenchmarkOrchestratorServer()
 }
@@ -87,9 +75,6 @@ type UnimplementedBenchmarkOrchestratorServer struct {
 
 func (UnimplementedBenchmarkOrchestratorServer) RegisterNode(context.Context, *NodeInfo) (*RegisterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterNode not implemented")
-}
-func (UnimplementedBenchmarkOrchestratorServer) SendExecutionPlan(context.Context, *ExecutionPlan) (*ExecutionAck, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendExecutionPlan not implemented")
 }
 func (UnimplementedBenchmarkOrchestratorServer) CollectLogs(context.Context, *LogRequest) (*LogData, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CollectLogs not implemented")
@@ -125,24 +110,6 @@ func _BenchmarkOrchestrator_RegisterNode_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _BenchmarkOrchestrator_SendExecutionPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecutionPlan)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(BenchmarkOrchestratorServer).SendExecutionPlan(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: BenchmarkOrchestrator_SendExecutionPlan_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BenchmarkOrchestratorServer).SendExecutionPlan(ctx, req.(*ExecutionPlan))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _BenchmarkOrchestrator_CollectLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(LogRequest)
 	if err := dec(in); err != nil {
@@ -173,12 +140,175 @@ var BenchmarkOrchestrator_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _BenchmarkOrchestrator_RegisterNode_Handler,
 		},
 		{
-			MethodName: "SendExecutionPlan",
-			Handler:    _BenchmarkOrchestrator_SendExecutionPlan_Handler,
-		},
-		{
 			MethodName: "CollectLogs",
 			Handler:    _BenchmarkOrchestrator_CollectLogs_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "benchmark.proto",
+}
+
+const (
+	BenchmarkNode_ReceivePlan_FullMethodName = "/benchmark.BenchmarkNode/ReceivePlan"
+	BenchmarkNode_SyncNode_FullMethodName    = "/benchmark.BenchmarkNode/SyncNode"
+	BenchmarkNode_Execute_FullMethodName     = "/benchmark.BenchmarkNode/Execute"
+)
+
+// BenchmarkNodeClient is the client API for BenchmarkNode service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type BenchmarkNodeClient interface {
+	ReceivePlan(ctx context.Context, in *ExecutionPlan, opts ...grpc.CallOption) (*ExecutionAck, error)
+	SyncNode(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ExecutionAck, error)
+	Execute(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ExecutionAck, error)
+}
+
+type benchmarkNodeClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewBenchmarkNodeClient(cc grpc.ClientConnInterface) BenchmarkNodeClient {
+	return &benchmarkNodeClient{cc}
+}
+
+func (c *benchmarkNodeClient) ReceivePlan(ctx context.Context, in *ExecutionPlan, opts ...grpc.CallOption) (*ExecutionAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionAck)
+	err := c.cc.Invoke(ctx, BenchmarkNode_ReceivePlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *benchmarkNodeClient) SyncNode(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ExecutionAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionAck)
+	err := c.cc.Invoke(ctx, BenchmarkNode_SyncNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *benchmarkNodeClient) Execute(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ExecutionAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionAck)
+	err := c.cc.Invoke(ctx, BenchmarkNode_Execute_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// BenchmarkNodeServer is the server API for BenchmarkNode service.
+// All implementations must embed UnimplementedBenchmarkNodeServer
+// for forward compatibility
+type BenchmarkNodeServer interface {
+	ReceivePlan(context.Context, *ExecutionPlan) (*ExecutionAck, error)
+	SyncNode(context.Context, *emptypb.Empty) (*ExecutionAck, error)
+	Execute(context.Context, *emptypb.Empty) (*ExecutionAck, error)
+	mustEmbedUnimplementedBenchmarkNodeServer()
+}
+
+// UnimplementedBenchmarkNodeServer must be embedded to have forward compatible implementations.
+type UnimplementedBenchmarkNodeServer struct {
+}
+
+func (UnimplementedBenchmarkNodeServer) ReceivePlan(context.Context, *ExecutionPlan) (*ExecutionAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReceivePlan not implemented")
+}
+func (UnimplementedBenchmarkNodeServer) SyncNode(context.Context, *emptypb.Empty) (*ExecutionAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncNode not implemented")
+}
+func (UnimplementedBenchmarkNodeServer) Execute(context.Context, *emptypb.Empty) (*ExecutionAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
+}
+func (UnimplementedBenchmarkNodeServer) mustEmbedUnimplementedBenchmarkNodeServer() {}
+
+// UnsafeBenchmarkNodeServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to BenchmarkNodeServer will
+// result in compilation errors.
+type UnsafeBenchmarkNodeServer interface {
+	mustEmbedUnimplementedBenchmarkNodeServer()
+}
+
+func RegisterBenchmarkNodeServer(s grpc.ServiceRegistrar, srv BenchmarkNodeServer) {
+	s.RegisterService(&BenchmarkNode_ServiceDesc, srv)
+}
+
+func _BenchmarkNode_ReceivePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutionPlan)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BenchmarkNodeServer).ReceivePlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BenchmarkNode_ReceivePlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BenchmarkNodeServer).ReceivePlan(ctx, req.(*ExecutionPlan))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BenchmarkNode_SyncNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BenchmarkNodeServer).SyncNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BenchmarkNode_SyncNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BenchmarkNodeServer).SyncNode(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BenchmarkNode_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BenchmarkNodeServer).Execute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BenchmarkNode_Execute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BenchmarkNodeServer).Execute(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// BenchmarkNode_ServiceDesc is the grpc.ServiceDesc for BenchmarkNode service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var BenchmarkNode_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "benchmark.BenchmarkNode",
+	HandlerType: (*BenchmarkNodeServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ReceivePlan",
+			Handler:    _BenchmarkNode_ReceivePlan_Handler,
+		},
+		{
+			MethodName: "SyncNode",
+			Handler:    _BenchmarkNode_SyncNode_Handler,
+		},
+		{
+			MethodName: "Execute",
+			Handler:    _BenchmarkNode_Execute_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

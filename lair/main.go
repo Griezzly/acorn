@@ -25,14 +25,26 @@ func (s *orchestratorServer) RegisterNode(ctx context.Context, in *pb.NodeInfo) 
 	return &pb.RegisterResponse{Status: "Registered"}, nil
 }
 
-func (s *orchestratorServer) SendExecutionPlan(ctx context.Context, in *pb.ExecutionPlan) (*pb.ExecutionAck, error) {
-	log.Printf("Sending plan to node %s: %s", in.NodeId, in.Plan)
-	return &pb.ExecutionAck{Status: "Plan Received"}, nil
-}
-
 func (s *orchestratorServer) CollectLogs(ctx context.Context, in *pb.LogRequest) (*pb.LogData, error) {
 	log.Printf("Collecting logs from node %s", in.NodeId)
 	return &pb.LogData{Logs: fmt.Sprintf("Sample logs for node %s", in.NodeId)}, nil
+}
+
+func (s *orchestratorServer) SendExecutionPlan(ctx context.Context, plan *pb.ExecutionPlan) (*pb.ExecutionAck, error) {
+	s.mu.Lock()
+	node, ok := s.nodes[plan.NodeId]
+	s.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("node %s not registered", plan.NodeId)
+	}
+	targetAddr := fmt.Sprintf("%s:60051", node.Ip)
+	conn, err := grpc.Dial(targetAddr, grpc.WithInsecure())
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node: %w", err)
+	}
+	defer conn.Close()
+	client := pb.NewBenchmarkNodeClient(conn)
+	return client.ReceivePlan(ctx, plan)
 }
 
 func main() {
@@ -50,4 +62,16 @@ func main() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
+	for _, node := range orchestrator.nodes {
+		planStr, startTime := generateExecutionPlan() // or read from config
+		plan := &pb.ExecutionPlan{
+			NodeId:    node.NodeId,
+			Plan:      planStr,
+			StartTime: startTime,
+		}
+		ack, err := orchestrator.SendExecutionPlan(context.Background(), plan)
+		log.Printf("Plan sent to %s: %v (err: %v)", node.NodeId, ack, err)
+		// optionally: poll for logs after expected completion
+	}
+
 }

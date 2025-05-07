@@ -1,11 +1,12 @@
 syntax = "proto3";
 option go_package = "./;grpc";
 
+import "google/protobuf/empty.proto";
+
 package benchmark;
 
 service BenchmarkOrchestrator {
   rpc RegisterNode(NodeInfo) returns (RegisterResponse);
-  rpc SendExecutionPlan(ExecutionPlan) returns (ExecutionAck);
   rpc CollectLogs(LogRequest) returns (LogData);
 }
 
@@ -35,4 +36,9 @@ message LogRequest {
 
 message LogData {
   string logs = 1;
+}
+
+service BenchmarkNode {
+  rpc ReceivePlan(ExecutionPlan) returns (ExecutionAck);
+  rpc SyncNode(google.protobuf.Empty) returns (ExecutionAck);
 }

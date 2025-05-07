@@ -1,0 +1,254 @@
+package acorn
+
+import (
+	pb "acorn/grpc"
+	"bytes"
+	"fmt"
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/mem"
+	netmon "github.com/shirou/gopsutil/net"
+	"os/exec"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+type PlanExecutor struct {
+	logCollector *LogCollector
+}
+
+func (pe *PlanExecutor) monitorDiagnostics(stopCh <-chan struct{}) {
+	go func() {
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				cpuPercents, _ := cpu.Percent(0, false)
+				vmStat, _ := mem.VirtualMemory()
+				netIO, _ := netmon.IOCounters(false)
+
+				cpuLoad := 0.0
+				if len(cpuPercents) > 0 {
+					cpuLoad = cpuPercents[0]
+				}
+
+				netIn, netOut := uint64(0), uint64(0)
+				if len(netIO) > 0 {
+					netIn = netIO[0].BytesRecv
+					netOut = netIO[0].BytesSent
+				}
+
+				diagnosticsMsg :=
+					fmt.Sprintf("Diagnostics - CPU: %.2f%%, Mem: %.2f%%, NetIn: %dB, NetOut: %dB",
+						cpuLoad, vmStat.UsedPercent, netIn, netOut)
+
+				pe.logCollector.Add(diagnosticsMsg)
+			}
+		}
+	}()
+}
+
+func (p *PlanExecutor) BlockIP(ip string) error {
+	cmd := exec.Command("iptables", "-A", "OUTPUT", "-d", ip, "-j", "DROP")
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("BlockIP: failed to block %s: %v", ip, err))
+	} else {
+		p.logCollector.Add(fmt.Sprintf("BlockIP: blocked IP %s", ip))
+	}
+	return err
+}
+
+// Unblock outgoing packets to a specific IP.
+func (p *PlanExecutor) UnblockIP(ip string) error {
+	cmd := exec.Command("iptables", "-D", "OUTPUT", "-d", ip, "-j", "DROP")
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("UnblockIP: failed to unblock %s: %v", ip, err))
+	} else {
+		p.logCollector.Add(fmt.Sprintf("UnblockIP: unblocked IP %s", ip))
+	}
+	return err
+}
+
+// Delay outgoing traffic (ms).
+func (p *PlanExecutor) DelayTraffic(delayMs int) error {
+	cmd := exec.Command("tc", "qdisc", "add", "dev", "eth0", "root", "netem", "delay", fmt.Sprintf("%dms", delayMs))
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("DelayTraffic: failed to add %dms delay: %v", delayMs, err))
+	} else {
+		p.logCollector.Add(fmt.Sprintf("DelayTraffic: applied %dms delay", delayMs))
+	}
+	return err
+}
+
+// Clear any traffic delay.
+func (p *PlanExecutor) ClearDelay() error {
+	cmd := exec.Command("tc", "qdisc", "del", "dev", "eth0", "root")
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("ClearDelay: failed: %v", err))
+	} else {
+		p.logCollector.Add("ClearDelay: delay cleared")
+	}
+	return err
+}
+
+// Introduce packet loss percentage (0-100).
+func (p *PlanExecutor) PacketLoss(percent int) error {
+	cmd := exec.Command("tc", "qdisc", "add", "dev", "eth0", "root", "netem", "loss", fmt.Sprintf("%d%%", percent))
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("PacketLoss: failed to add %d%% loss: %v", percent, err))
+	} else {
+		p.logCollector.Add(fmt.Sprintf("PacketLoss: applied %d%% packet loss", percent))
+	}
+	return err
+}
+
+// Clear packet loss config.
+func (p *PlanExecutor) ClearLoss() error {
+	cmd := exec.Command("tc", "qdisc", "del", "dev", "eth0", "root")
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("ClearLoss: failed: %v", err))
+	} else {
+		p.logCollector.Add("ClearLoss: loss cleared")
+	}
+	return err
+}
+
+// Reserve memory in MB.
+func (p *PlanExecutor) ReserveMemory(mb int) []byte {
+	p.logCollector.Add(fmt.Sprintf("ReserveMemory: reserving %d MB", mb))
+	return make([]byte, mb*1024*1024)
+}
+
+// Artificial CPU load for duration.
+func (p *PlanExecutor) LoadCPU(coreCount int, loadPerCore float64, duration time.Duration) {
+	var wg sync.WaitGroup
+	p.logCollector.Add(fmt.Sprintf("LoadCPU: applying %.2f%% load on %d cores for %s",
+		loadPerCore*100, coreCount, duration))
+
+	for i := 0; i < coreCount; i++ {
+		wg.Add(1)
+		go func(core int) {
+			defer wg.Done()
+			stop := time.Now().Add(duration)
+			busyTime := int64(loadPerCore * 100)
+			idleTime := 100 - busyTime
+
+			for time.Now().Before(stop) {
+				start := time.Now()
+				for time.Since(start).Milliseconds() < busyTime {
+				}
+				time.Sleep(time.Duration(idleTime) * time.Millisecond)
+			}
+		}(i)
+	}
+	wg.Wait()
+	p.logCollector.Add("LoadCPU: finished load")
+}
+
+// Print active TCP connections to logs.
+func (p *PlanExecutor) TraceConnections() {
+	cmd := exec.Command("ss", "-tanp")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("TraceConnections: error: %v", err))
+	} else {
+		p.logCollector.Add(fmt.Sprintf("TraceConnections:\n%s", bytes.TrimSpace(output)))
+	}
+}
+
+// Ping a host and log the RTT result.
+func (p *PlanExecutor) PingRTT(host string) {
+	cmd := exec.Command("ping", "-c", "1", "-W", "1", host)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("PingRTT: failed to ping %s: %v", host, err))
+	} else {
+		p.logCollector.Add(fmt.Sprintf("PingRTT to %s:\n%s", host, bytes.TrimSpace(output)))
+	}
+}
+
+func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
+	stopCh := make(chan struct{})
+	go pe.monitorDiagnostics(stopCh)
+
+	pe.logCollector.Add(fmt.Sprintf("Started executing plan: %s at %d", plan.Plan, plan.StartTime))
+
+	type Step struct {
+		Timestamp int
+		Action    string
+		Args      []string
+	}
+
+	var steps []Step
+	for _, line := range strings.Split(plan.Plan, "\n") {
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		ts, err := strconv.Atoi(parts[0])
+		if err != nil {
+			continue
+		}
+		args := strings.Split(parts[2], ",")
+		steps = append(steps, Step{Timestamp: ts, Action: parts[1], Args: args})
+	}
+
+	sort.Slice(steps, func(i, j int) bool {
+		return steps[i].Timestamp < steps[j].Timestamp
+	})
+
+	start := time.Now()
+	for _, step := range steps {
+		wait := time.Duration(step.Timestamp)*time.Millisecond - time.Since(start)
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+
+		pe.logCollector.Add(fmt.Sprintf("Executing step: %v", step))
+		switch step.Action {
+		case "block":
+			if len(step.Args) >= 1 {
+				_ = pe.BlockIP(step.Args[0])
+			}
+		case "unblock":
+			if len(step.Args) >= 1 {
+				_ = pe.UnblockIP(step.Args[0])
+			}
+		case "delay":
+			if len(step.Args) >= 1 {
+				delay, _ := strconv.Atoi(step.Args[0])
+				_ = pe.DelayTraffic(delay)
+			}
+		case "loss":
+			if len(step.Args) >= 1 {
+				loss, _ := strconv.Atoi(step.Args[0])
+				_ = pe.PacketLoss(loss)
+			}
+		case "mem":
+			if len(step.Args) >= 1 {
+				mb, _ := strconv.Atoi(step.Args[0])
+				_ = pe.ReserveMemory(mb)
+			}
+		case "cpu":
+			if len(step.Args) >= 1 {
+				load, _ := strconv.ParseFloat(step.Args[0], 64)
+				go pe.LoadCPU(runtime.NumCPU(), load, 5*time.Second)
+			}
+		}
+	}
+	close(stopCh)
+	pe.logCollector.Add(fmt.Sprintf("Finished executing plan: %s at %d", plan.Plan, time.Now().UnixNano()))
+}
