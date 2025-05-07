@@ -1,10 +1,7 @@
 package lair
 
 import (
-	pb "acorn/grpc"
-	"context"
 	"fmt"
-	"google.golang.org/grpc"
 	"log"
 	"os/exec"
 	"strings"
@@ -88,54 +85,4 @@ func generateExecutionPlan() (string, int64) {
 	}, "\n")
 	start := time.Now().Add(3 * time.Second).UnixMilli() // start 3 seconds from now
 	return plan, start
-}
-
-// main remains mostly unchanged, but plan execution moved
-func main() {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("Did not connect: %v", err)
-	}
-	defer conn.Close()
-	c := pb.NewBenchmarkOrchestratorClient(conn)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	// Register Node
-	res, err := c.RegisterNode(ctx, &pb.NodeInfo{NodeId: "node-1", Ip: "192.168.1.2", Specs: "4vCPU, 8GB RAM"})
-	if err != nil {
-		log.Fatalf("Register failed: %v", err)
-	}
-	log.Printf("Registration response: %s", res.Status)
-
-	// Sync Clock before running benchmark
-	if err := syncClock("pool.ntp.org"); err != nil {
-		log.Printf("Warning: NTP sync failed: %v", err)
-	}
-
-	// Generate and Send Execution Plan
-	plan, startTime := generateExecutionPlan()
-	ack, err := c.SendExecutionPlan(ctx, &pb.ExecutionPlan{
-		NodeId:    "node-1",
-		Plan:      plan,
-		StartTime: startTime,
-	})
-	if err != nil {
-		log.Fatalf("Plan failed: %v", err)
-	}
-	log.Printf("Plan ack: %s", ack.Status)
-
-	// Monitor and Execute Plan
-	stopCh := make(chan struct{})
-	monitorDiagnostics(stopCh)
-
-	time.Sleep(15 * time.Second)
-	close(stopCh)
-
-	logs, err := c.CollectLogs(ctx, &pb.LogRequest{NodeId: "node-1"})
-	if err != nil {
-		log.Fatalf("Collect failed: %v", err)
-	}
-	log.Printf("Logs: %s", logs.Logs)
 }
