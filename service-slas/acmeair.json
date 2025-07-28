@@ -1,0 +1,85 @@
+{
+  "sla_version": "v2.0",
+  "customerID": "Admin",
+  "applications": [
+    {
+      "applicationID": "",
+      "application_name": "acmeair",
+      "application_namespace": "acmeair",
+      "application_desc": "acmeair application",
+      "microservices": [
+        {
+          "microserviceID": "",
+          "microservice_name": "mongodb",
+          "microservice_namespace": "acmeair",
+          "virtualization": "container",
+          "memory": 500,
+          "vcpus": 1,
+          "vgpus": 0,
+          "vtpus": 0,
+          "bandwidth_in": 0,
+          "bandwidth_out": 0,
+          "storage": 0,
+          "code": "docker.io/library/mongo:latest",
+          "state": "",
+          "port": "27017:27017",
+          "addresses": {
+            "rr_ip": "10.30.10.11"
+          },
+          "added_files": []
+        },
+        {
+          "microserviceID": "",
+          "microservice_name": "authservice",
+          "microservice_namespace": "acmeair",
+          "virtualization": "container",
+          "description": "",
+          "memory": 100,
+          "vcpus": 1,
+          "vgpus": 0,
+          "vtpus": 0,
+          "bandwidth_in": 0,
+          "bandwidth_out": 0,
+          "storage": 0,
+          "port": "9443:9443",
+          "code": "docker.io/schubbcasten/acmeair-nodejs:v0.0.4-x86",
+          "state": "",
+          "added_files": [],
+          "args": [],
+          "environment": [
+            "APP_NAME=authservice_app.js",
+            "MONGO_URL=mongodb://10.30.10.11:27017/acmeair"
+          ],
+          "addresses": {
+            "rr_ip": "10.30.10.1"
+          },
+          "constraints": [],
+          "connectivity": []
+        },
+        {
+          "microserviceID": "",
+          "microservice_name": "acmeair",
+          "microservice_namespace": "acmeair",
+          "virtualization": "container",
+          "description": "",
+          "memory": 100,
+          "vcpus": 1,
+          "vgpus": 0,
+          "vtpus": 0,
+          "bandwidth_in": 0,
+          "bandwidth_out": 0,
+          "storage": 0,
+          "code": "docker.io/schubbcasten/acmeair-nodejs:v0.0.4-x86",
+          "state": "",
+          "port": "9080:9080",
+          "addresses": {
+            "rr_ip": "10.30.10.2"
+          },
+          "added_files": [],
+          "args": [],
+          "environment": ["AUTH_SERVICE=10.30.10.1:9443","MONGO_URL=mongodb://10.30.10.11:27017/acmeair"]
+        }
+      ]
+    }
+  ]
+}
