@@ -129,7 +129,7 @@ resource "hcloud_server" "worker" {
   count       = var.worker_count
   name        = "${var.worker_name_prefix}-${count.index + 1}"
   server_type = var.server_type
-  image       = "233861285"  # thesis-test-node-1-1745851244
+  image       = "322025898"  # thesis-test-node-1-1745851244
   location    = var.location
   
   ssh_keys = var.ssh_keys
@@ -163,13 +163,11 @@ resource "hcloud_server" "worker" {
   }
 }
 
-# Attach the inter-node firewall to both servers after they're created
-resource "hcloud_firewall_attachment" "inter_node_orchestrator" {
+# Attach the inter-node firewall to all servers (orchestrator + workers)
+resource "hcloud_firewall_attachment" "inter_node_all" {
   firewall_id = hcloud_firewall.inter_node_firewall.id
-  server_ids  = [hcloud_server.orchestrator.id]
-}
-
-resource "hcloud_firewall_attachment" "inter_node_workers" {
-  firewall_id = hcloud_firewall.inter_node_firewall.id
-  server_ids  = [for worker in hcloud_server.worker : worker.id]
+  server_ids  = concat(
+    [hcloud_server.orchestrator.id],
+    [for worker in hcloud_server.worker : worker.id]
+  )
 }

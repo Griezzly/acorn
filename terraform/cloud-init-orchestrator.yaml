@@ -18,20 +18,42 @@ write_files:
     encoding: b64
     content: ${orchestrator_script}
 
+  - path: /etc/systemd/system/oakestra-orchestrator-init.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Oakestra Orchestrator Initialization
+      After=docker.service network-online.target
+      Requires=docker.service
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      ExecStart=/opt/orchestrator-init.sh
+      Restart=on-failure
+      RestartSec=10
+      StandardOutput=append:/var/log/oakestra-init.log
+      StandardError=append:/var/log/oakestra-init.log
+
+      [Install]
+      WantedBy=multi-user.target
+
 # System configuration
 runcmd:
   # Update system clock
   - timedatectl set-ntp true
-  
+
   # Set hostname
   - hostnamectl set-hostname oakestra-orchestrator
-  
+
   # Configure logging
   - mkdir -p /var/log
   - chmod 755 /var/log
-  
-  # Start orchestrator initialization
-  - systemd-run --unit=oakestra-orchestrator-init --no-block /opt/orchestrator-init.sh
+
+  # Enable and start the orchestrator service
+  - systemctl daemon-reload
+  - systemctl enable oakestra-orchestrator-init.service
+  - systemctl start oakestra-orchestrator-init.service
 
 # Set timezone
 timezone: UTC

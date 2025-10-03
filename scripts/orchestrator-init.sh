@@ -9,7 +9,7 @@ LOG_FILE="/var/log/oakestra-init.log"
 READY_FLAG="/tmp/oakestra-ready"
 
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE" 2>&1
 }
 
 # Wait for system to be ready
@@ -348,6 +348,5 @@ main() {
     wait
 }
 
-# Run main function in background and exit
-main &
-exit 0
+# Run main function directly - systemd will manage the process
+main

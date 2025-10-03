@@ -22,16 +22,16 @@ write_files:
 runcmd:
   # Update system clock
   - timedatectl set-ntp true
-  
+
   # Set hostname with worker ID
   - hostnamectl set-hostname oakestra-worker-${worker_id}
-  
+
   # Configure logging
   - mkdir -p /var/log
   - chmod 755 /var/log
-  
-  # Start worker initialization (this will wait for orchestrator)
-  - systemd-run --unit=oakestra-worker-init --no-block /opt/worker-init.sh
+
+  # Run worker initialization (NodeEngine runs as daemon, so script can exit)
+  - /opt/worker-init.sh
 
 # Set timezone
 timezone: UTC

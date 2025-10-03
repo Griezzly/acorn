@@ -65,50 +65,29 @@ wait_for_orchestrator() {
 # Initialize Oakestra worker node
 init_oakestra_worker() {
     log "Starting Oakestra worker node initialization..."
-    
-    # Start NodeEngine with orchestrator IP address
-    log "Starting NodeEngine with orchestrator at $ORCHESTRATOR_IP..."
-    
-    # Start NodeEngine as a background service
-    nohup sudo NodeEngine -a "$ORCHESTRATOR_IP" -d > /var/log/nodeengine.log 2>&1 &
-    NODEENGINE_PID=$!
-    
-    log "NodeEngine started with PID: $NODEENGINE_PID"
-    
-    # Wait for NodeEngine to be ready
-    local max_attempts=30
-    local attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        # Check if NodeEngine process is still running
-        if kill -0 "$NODEENGINE_PID" 2>/dev/null; then
-            log "NodeEngine is running (PID: $NODEENGINE_PID)"
-            break
-        else
-            log "NodeEngine process died, checking if it restarted..."
-            # Check if NodeEngine is running under a different PID
-            if pgrep -f "NodeEngine" >/dev/null 2>&1; then
-                NEW_PID=$(pgrep -f "NodeEngine")
-                log "NodeEngine is running with new PID: $NEW_PID"
-                break
-            fi
-        fi
-        
-        log "Attempt $attempt/$max_attempts: Waiting for NodeEngine to be ready..."
-        sleep 5
-        attempt=$((attempt + 1))
-    done
-    
-    if [ $attempt -gt $max_attempts ]; then
-        log "WARNING: NodeEngine health check timed out"
-        log "NodeEngine log output:"
-        tail -20 /var/log/nodeengine.log | while read line; do
-            log "NodeEngine: $line"
-        done
+
+    # Start NodeEngine with orchestrator IP address (-d runs it as systemd daemon)
+    log "Starting NodeEngine daemon with orchestrator at $ORCHESTRATOR_IP..."
+
+    sudo NodeEngine -a "$ORCHESTRATOR_IP" -d
+
+    # Wait a moment for systemd service to start
+    sleep 2
+
+    # Verify nodeengined daemon is running (systemd service)
+    if pgrep -f "nodeengined" >/dev/null 2>&1; then
+        NODEENGINE_PID=$(pgrep -f "nodeengined")
+        log "NodeEngine daemon is running (PID: $NODEENGINE_PID)"
     else
-        log "NodeEngine is running successfully"
+        log "WARNING: nodeengined process not found, checking systemd service..."
+        if systemctl is-active --quiet nodeengine.service; then
+            log "NodeEngine service is active"
+        else
+            log "ERROR: NodeEngine daemon failed to start"
+            exit 1
+        fi
     fi
-    
+
     log "Worker initialization complete"
 }
 
