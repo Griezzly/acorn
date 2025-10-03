@@ -1,0 +1,41 @@
+#cloud-config
+
+# Oakestra Worker Cloud-Init Configuration
+# This configuration initializes worker nodes and waits for orchestrator
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - curl
+  - netcat
+  - jq
+
+# Create initialization script from template
+write_files:
+  - path: /opt/worker-init.sh
+    permissions: '0755'
+    encoding: b64
+    content: ${worker_script}
+
+# System configuration
+runcmd:
+  # Update system clock
+  - timedatectl set-ntp true
+  
+  # Set hostname with worker ID
+  - hostnamectl set-hostname oakestra-worker-${worker_id}
+  
+  # Configure logging
+  - mkdir -p /var/log
+  - chmod 755 /var/log
+  
+  # Start worker initialization (this will wait for orchestrator)
+  - systemd-run --unit=oakestra-worker-init --no-block /opt/worker-init.sh
+
+# Set timezone
+timezone: UTC
+
+# Configure logging for cloud-init
+output:
+  all: '| tee -a /var/log/cloud-init-output.log'

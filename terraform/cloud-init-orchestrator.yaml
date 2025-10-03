@@ -1,0 +1,41 @@
+#cloud-config
+
+# Oakestra Orchestrator Cloud-Init Configuration
+# This configuration initializes the root orchestrator node
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - curl
+  - netcat
+  - jq
+
+# Create initialization script from template
+write_files:
+  - path: /opt/orchestrator-init.sh
+    permissions: '0755'
+    encoding: b64
+    content: ${orchestrator_script}
+
+# System configuration
+runcmd:
+  # Update system clock
+  - timedatectl set-ntp true
+  
+  # Set hostname
+  - hostnamectl set-hostname oakestra-orchestrator
+  
+  # Configure logging
+  - mkdir -p /var/log
+  - chmod 755 /var/log
+  
+  # Start orchestrator initialization
+  - systemd-run --unit=oakestra-orchestrator-init --no-block /opt/orchestrator-init.sh
+
+# Set timezone
+timezone: UTC
+
+# Configure logging for cloud-init
+output:
+  all: '| tee -a /var/log/cloud-init-output.log'

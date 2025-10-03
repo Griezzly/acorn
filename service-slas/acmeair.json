@@ -20,11 +20,12 @@
           "bandwidth_in": 0,
           "bandwidth_out": 0,
           "storage": 0,
-          "code": "docker.io/library/mongo:latest",
+          "code": "docker.io/library/mongo:4",
           "state": "",
           "port": "27017:27017",
           "addresses": {
-            "rr_ip": "10.30.10.11"
+            "rr_ip": "10.30.10.11",
+            "rr_ip_v6": "fdff:2000::10:11"
           },
           "added_files": []
         },
@@ -48,10 +49,11 @@
           "args": [],
           "environment": [
             "APP_NAME=authservice_app.js",
-            "MONGO_URL=mongodb://10.30.10.11:27017"
+            "MONGO_URL=mongodb://10.30.10.11:27017/acmeair"
           ],
           "addresses": {
-            "rr_ip": "10.30.10.1"
+            "rr_ip": "10.30.10.1",
+            "rr_ip_v6": "fdff:2000::10:1"
           },
           "constraints": [],
           "connectivity": []
@@ -73,11 +75,12 @@
           "state": "",
           "port": "9080:9080",
           "addresses": {
-            "rr_ip": "10.30.10.2"
+            "rr_ip": "10.30.10.2",
+            "rr_ip_v6": "fdff:2000::10:2"
           },
           "added_files": [],
           "args": [],
-          "environment": ["AUTH_SERVICE=10.30.10.1:9443","MONGO_URL=mongodb://10.30.10.11:27017"]
+          "environment": ["AUTH_SERVICE=10.30.10.1:9443","MONGO_URL=mongodb://10.30.10.11:27017/acmeair"]
         }
       ]
     }
