@@ -1,0 +1,27 @@
+# Acme Air Deployment Configuration
+# Defines deployment order and instance counts for each microservice
+
+orchestrator_ip: "${ORCHESTRATOR_IP}"  # Can be overridden by environment variable
+
+# Deployment order - services are deployed in this sequence to respect dependencies
+deployment_order:
+  - service: mongodb
+    instances: 1
+    wait_time: 30  # seconds to wait after deployment before next service
+
+  - service: authservice
+    instances: 1
+    wait_time: 20
+
+  - service: acmeair
+    instances: 1
+    wait_time: 10
+
+# Database initialization - run after all services are deployed
+post_deployment:
+  initialize_db: true
+  db_endpoint: "http://10.30.10.2:9080/rest/api/loader/load"
+  validation_endpoint: "http://10.30.10.2:9080/rest/api/login"
+  validation_credentials:
+    login: "uid0@email.com"
+    password: "password"
