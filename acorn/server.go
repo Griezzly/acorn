@@ -2,6 +2,7 @@ package acorn
 
 import (
 	pb "acorn/grpc"
+	"acorn/pkg/logcollector"
 	"context"
 	"fmt"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -47,7 +48,7 @@ func (ps *PlanStore) Get() *pb.ExecutionPlan {
 type server struct {
 	pb.UnimplementedBenchmarkNodeServer // Embeds the unimplemented server for forward compatibility
 	orchestrator                        pb.BenchmarkOrchestratorClient
-	logCollector                        *LogCollector
+	logCollector                        *logcollector.LogCollector
 	executor                            *PlanExecutor
 	nodeID                              string
 }
@@ -73,7 +74,7 @@ func (s *server) ReceivePlan(ctx context.Context, plan *pb.ExecutionPlan) (*pb.E
 		if lokiURL == "" {
 			lokiURL = "http://100.77.231.113:3100/loki/api/v1/push" // Your Mac's Tailscale IP
 		}
-		pusher := NewLokiPusher(lokiURL, lokiLabels)
+		pusher := logcollector.NewLokiPusher(lokiURL, lokiLabels)
 		if err := pusher.Push(logs); err != nil {
 			log.Printf("Failed to push logs to Loki: %v", err)
 		} else {

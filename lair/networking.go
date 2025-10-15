@@ -99,8 +99,3 @@ func generateExecutionPlanForNode(nodeIP string, targetIPs []string) (string, in
 	start := time.Now().Add(5 * time.Second).UnixMilli() // start 5 seconds from now
 	return plan, start
 }
-
-// generateExecutionPlan is the legacy function, kept for backwards compatibility
-func generateExecutionPlan() (string, int64) {
-	return generateExecutionPlanForNode("", []string{"10.0.0.5"})
-}

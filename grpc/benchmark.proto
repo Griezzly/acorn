@@ -8,6 +8,7 @@ package benchmark;
 service BenchmarkOrchestrator {
   rpc RegisterNode(NodeInfo) returns (RegisterResponse);
   rpc CollectLogs(LogRequest) returns (LogData);
+  rpc StartBenchmark(google.protobuf.Empty) returns (ExecutionAck);
 }
 
 message NodeInfo {

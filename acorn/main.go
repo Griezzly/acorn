@@ -2,6 +2,7 @@ package acorn
 
 import (
 	pb "acorn/grpc"
+	"acorn/pkg/logcollector"
 	"google.golang.org/grpc"
 	"log"
 	"net"
@@ -24,7 +25,7 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	logCollector := &LogCollector{}
+	logCollector := &logcollector.LogCollector{}
 	executor := &PlanExecutor{logCollector: logCollector}
 	nodeID := "your_node_id" // set appropriately
 

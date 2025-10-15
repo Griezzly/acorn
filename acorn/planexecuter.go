@@ -2,11 +2,9 @@ package acorn
 
 import (
 	pb "acorn/grpc"
+	"acorn/pkg/logcollector"
 	"bytes"
 	"fmt"
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/mem"
-	netmon "github.com/shirou/gopsutil/net"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -17,42 +15,7 @@ import (
 )
 
 type PlanExecutor struct {
-	logCollector *LogCollector
-}
-
-func (pe *PlanExecutor) monitorDiagnostics(stopCh <-chan struct{}) {
-	go func() {
-		ticker := time.NewTicker(5 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-stopCh:
-				return
-			case <-ticker.C:
-				cpuPercents, _ := cpu.Percent(0, false)
-				vmStat, _ := mem.VirtualMemory()
-				netIO, _ := netmon.IOCounters(false)
-
-				cpuLoad := 0.0
-				if len(cpuPercents) > 0 {
-					cpuLoad = cpuPercents[0]
-				}
-
-				netIn, netOut := uint64(0), uint64(0)
-				if len(netIO) > 0 {
-					netIn = netIO[0].BytesRecv
-					netOut = netIO[0].BytesSent
-				}
-
-				diagnosticsMsg :=
-					fmt.Sprintf("Diagnostics - CPU: %.2f%%, Mem: %.2f%%, NetIn: %dB, NetOut: %dB",
-						cpuLoad, vmStat.UsedPercent, netIn, netOut)
-
-				pe.logCollector.Add(diagnosticsMsg)
-			}
-		}
-	}()
+	logCollector *logcollector.LogCollector
 }
 
 func (p *PlanExecutor) BlockIP(ip string) error {
@@ -181,8 +144,13 @@ func (p *PlanExecutor) PingRTT(host string) {
 }
 
 func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
-	stopCh := make(chan struct{})
-	go pe.monitorDiagnostics(stopCh)
+	// Start diagnostics monitoring during plan execution
+	monitorConfig := &logcollector.MonitoringConfig{
+		Interval:     5 * time.Millisecond,
+		MetricPrefix: "WORKER_METRIC",
+	}
+	_ = pe.logCollector.StartMonitoring(monitorConfig)
+	defer pe.logCollector.StopMonitoring()
 
 	executionStartTime := time.Now()
 	pe.logCollector.Add(fmt.Sprintf("[BENCHMARK_START] node_id=%s plan_start_time=%d execution_start=%d",
@@ -259,7 +227,7 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 		pe.logCollector.Add(fmt.Sprintf("[STEP_END] action=%s duration_us=%d",
 			step.Action, stepDuration.Microseconds()))
 	}
-	close(stopCh)
+
 	executionEndTime := time.Now()
 	executionDuration := executionEndTime.Sub(executionStartTime)
 	pe.logCollector.Add(fmt.Sprintf("[BENCHMARK_END] node_id=%s execution_end=%d duration_ms=%d steps_executed=%d",
