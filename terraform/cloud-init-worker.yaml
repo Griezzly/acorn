@@ -30,8 +30,8 @@ runcmd:
   - mkdir -p /var/log
   - chmod 755 /var/log
 
-  # Run worker initialization (NodeEngine runs as daemon, so script can exit)
-  - /opt/worker-init.sh
+  # Run worker initialization with Tailscale auth key (NodeEngine runs as daemon, so script can exit)
+  - TAILSCALE_AUTH_KEY="${tailscale_auth_key}" /opt/worker-init.sh
 
 # Set timezone
 timezone: UTC

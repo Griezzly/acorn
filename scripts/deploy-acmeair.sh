@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/opt/homebrew/bin/bash
 
 # Acme Air Deployment Automation for Oakestra
 # Deploys SLA and creates service instances in dependency order
@@ -111,7 +111,7 @@ log_step "Checking existing deployments..."
 EXISTING=$(curl -s -X GET "${BASE_URL}/api/applications/" \
     -H "Authorization: Bearer $TOKEN")
 
-APP_ID=$(echo "$EXISTING" | jq -r 'try . catch "[]"' | jq -r '.[] | select(.application_name == "acmeair") | .applicationID' 2>/dev/null || echo "")
+APP_ID=$(echo "$EXISTING" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r '.[] | select(.application_name == "acmeair") | .applicationID' 2>/dev/null || echo "")
 
 if [ -n "$APP_ID" ] && [ "$APP_ID" != "null" ]; then
     log_warn "Application exists (ID: $APP_ID)"
@@ -139,7 +139,7 @@ DEPLOY_RESPONSE=$(curl -s -X POST "${BASE_URL}/api/application/" \
     -H "Authorization: Bearer $TOKEN" \
     -d @"$SLA_FILE")
 
-APP_INFO=$(echo "$DEPLOY_RESPONSE" | jq -r . 2>/dev/null | jq .[0] 2>/dev/null)
+APP_INFO=$(echo "$DEPLOY_RESPONSE" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq '.[0]' 2>/dev/null)
 
 APP_ID=$(echo "$APP_INFO" | jq -r '.applicationID')
 APP_NAME=$(echo "$APP_INFO" | jq -r '.application_name')
@@ -160,7 +160,7 @@ MICROSERVICES=$(echo "$APP_INFO" | jq -r '.microservices[]')
 for SVC_ID in $MICROSERVICES; do
     SVC_DETAIL=$(curl -s -X GET "${BASE_URL}/api/service/${SVC_ID}" \
         -H "Authorization: Bearer $TOKEN")
-    SVC_NAME=$(echo "$SVC_DETAIL" | jq -r '.microservice_name')
+    SVC_NAME=$(echo "$SVC_DETAIL" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r '.microservice_name')
     SERVICE_IDS[$SVC_NAME]=$SVC_ID
     log_info "  Service: $SVC_NAME -> $SVC_ID"
 done

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"log"
+	"os"
 	"os/exec"
 	"sync"
 )
@@ -66,7 +67,12 @@ func (s *server) ReceivePlan(ctx context.Context, plan *pb.ExecutionPlan) (*pb.E
 			"job":     "benchmark_node",
 			"node_id": planCopy.NodeId,
 		}
-		lokiURL := "http://your-loki-host:3100/loki/api/v1/push"
+		// Use your Mac's Tailscale IP - get it with: tailscale ip -4
+		// Or set via environment variable LOKI_URL
+		lokiURL := os.Getenv("LOKI_URL")
+		if lokiURL == "" {
+			lokiURL = "http://100.77.231.113:3100/loki/api/v1/push" // Your Mac's Tailscale IP
+		}
 		pusher := NewLokiPusher(lokiURL, lokiLabels)
 		if err := pusher.Push(logs); err != nil {
 			log.Printf("Failed to push logs to Loki: %v", err)

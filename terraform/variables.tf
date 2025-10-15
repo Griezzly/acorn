@@ -45,3 +45,10 @@ variable "ssh_keys" {
   type        = list(string)
   default     = []
 }
+
+variable "tailscale_auth_key" {
+  description = "Tailscale authentication key for joining the tailnet"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

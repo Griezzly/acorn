@@ -184,7 +184,9 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 	stopCh := make(chan struct{})
 	go pe.monitorDiagnostics(stopCh)
 
-	pe.logCollector.Add(fmt.Sprintf("Started executing plan: %s at %d", plan.Plan, plan.StartTime))
+	executionStartTime := time.Now()
+	pe.logCollector.Add(fmt.Sprintf("[BENCHMARK_START] node_id=%s plan_start_time=%d execution_start=%d",
+		plan.NodeId, plan.StartTime, executionStartTime.UnixNano()))
 
 	type Step struct {
 		Timestamp int
@@ -217,7 +219,10 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 			time.Sleep(wait)
 		}
 
-		pe.logCollector.Add(fmt.Sprintf("Executing step: %v", step))
+		stepStartTime := time.Now()
+		pe.logCollector.Add(fmt.Sprintf("[STEP_START] timestamp=%d action=%s args=%v scheduled_at=%d",
+			stepStartTime.UnixNano(), step.Action, step.Args, step.Timestamp))
+
 		switch step.Action {
 		case "block":
 			if len(step.Args) >= 1 {
@@ -248,7 +253,15 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 				go pe.LoadCPU(runtime.NumCPU(), load, 5*time.Second)
 			}
 		}
+
+		stepEndTime := time.Now()
+		stepDuration := stepEndTime.Sub(stepStartTime)
+		pe.logCollector.Add(fmt.Sprintf("[STEP_END] action=%s duration_us=%d",
+			step.Action, stepDuration.Microseconds()))
 	}
 	close(stopCh)
-	pe.logCollector.Add(fmt.Sprintf("Finished executing plan: %s at %d", plan.Plan, time.Now().UnixNano()))
+	executionEndTime := time.Now()
+	executionDuration := executionEndTime.Sub(executionStartTime)
+	pe.logCollector.Add(fmt.Sprintf("[BENCHMARK_END] node_id=%s execution_end=%d duration_ms=%d steps_executed=%d",
+		plan.NodeId, executionEndTime.UnixNano(), executionDuration.Milliseconds(), len(steps)))
 }

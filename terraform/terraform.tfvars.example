@@ -4,6 +4,9 @@
 # Required: Your Hetzner Cloud API Token
 hcloud_token = "your-hcloud-api-token-here"
 
+# Reqquired Tailscale auth key for node authentication
+tailscale_auth_key = "your-tailscale-auth-key-here"
+
 # Optional: Customize server names (defaults provided)
 orchestrator_name   = "thesis-test-node-1"
 worker_count        = 2  # Number of worker nodes (1-10)

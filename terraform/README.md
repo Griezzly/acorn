@@ -166,6 +166,55 @@ Worker nodes use a simpler cloud-init process ([`cloud-init-worker.yaml`](cloud-
 
 The script completes and exits after starting NodeEngine daemon. The nodeengined process continues running independently managed by systemd.
 
+## Application Deployment
+
+After the infrastructure is deployed and verified, deploy the Acme Air application to Oakestra:
+
+```bash
+cd terraform
+../scripts/deploy-acmeair.sh
+```
+
+The deployment script automatically:
+1. Gets the orchestrator IP from Terraform output
+2. Authenticates with the Oakestra API
+3. Deploys the Acme Air SLA (application definition)
+4. Creates service instances in dependency order:
+   - MongoDB (waits 30s for initialization)
+   - Auth Service (waits 20s)
+   - Main Application (waits 10s)
+5. Initializes the database with sample data (10k customers, flight schedules)
+6. Validates the deployment with a login test
+
+**Configuration:**
+
+Edit [`../service-slas/deployment-config.yaml`](../service-slas/deployment-config.yaml) to customize:
+- Number of instances per service
+- Deployment wait times between services
+- Post-deployment initialization steps
+
+**Scaling services:**
+```yaml
+deployment_order:
+  - service: mongodb
+    instances: 1
+  - service: authservice
+    instances: 2  # Scale to 2 instances
+  - service: acmeair
+    instances: 3  # Scale to 3 instances
+```
+
+**Force redeployment:**
+```bash
+FORCE_REDEPLOY=true ../scripts/deploy-acmeair.sh
+```
+
+**Access the application:**
+- Web UI: `http://10.30.10.2:9080`
+- Test credentials: `uid0@email.com` / `password` (uid0-uid9999 available)
+
+For detailed deployment information, see [`../service-slas/DEPLOYMENT_GUIDE.md`](../service-slas/DEPLOYMENT_GUIDE.md).
+
 ## Verification
 
 After deploying the infrastructure, verify the cluster is fully operational using the automated verification script:

@@ -74,15 +74,33 @@ func monitorDiagnostics(stopCh <-chan struct{}) {
 	}()
 }
 
-func generateExecutionPlan() (string, int64) {
-	plan := strings.Join([]string{
-		"1000:block:10.0.0.5",
-		"2000:delay:150",
-		"3000:loss:10",
-		"4000:mem:512",
-		"5000:cpu:0.6",
-		"6000:unblock:10.0.0.5",
-	}, "\n")
-	start := time.Now().Add(3 * time.Second).UnixMilli() // start 3 seconds from now
+// generateExecutionPlanForNode creates a simple chaos engineering plan for a benchmark node.
+// nodeIP: the IP of the node that will execute this plan
+// targetIPs: IPs of other nodes/services that can be targeted for network chaos
+func generateExecutionPlanForNode(nodeIP string, targetIPs []string) (string, int64) {
+	var steps []string
+
+	// Basic plan: introduce some network chaos and resource constraints
+	// Targeting first available service if targetIPs exist
+	if len(targetIPs) > 0 {
+		steps = append(steps, fmt.Sprintf("1000:block:%s", targetIPs[0]))
+		steps = append(steps, fmt.Sprintf("6000:unblock:%s", targetIPs[0]))
+	}
+
+	// Network delays and packet loss
+	steps = append(steps, "2000:delay:150")
+	steps = append(steps, "3000:loss:10")
+
+	// Resource constraints
+	steps = append(steps, "4000:mem:512")
+	steps = append(steps, "5000:cpu:0.6")
+
+	plan := strings.Join(steps, "\n")
+	start := time.Now().Add(5 * time.Second).UnixMilli() // start 5 seconds from now
 	return plan, start
+}
+
+// generateExecutionPlan is the legacy function, kept for backwards compatibility
+func generateExecutionPlan() (string, int64) {
+	return generateExecutionPlanForNode("", []string{"10.0.0.5"})
 }

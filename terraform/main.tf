@@ -93,7 +93,7 @@ resource "hcloud_firewall" "inter_node_firewall" {
 resource "hcloud_server" "orchestrator" {
   name        = var.orchestrator_name
   server_type = var.server_type
-  image       = "304469121"  # Oakestra Root Snap
+  image       = "325043710"  # Oakestra Root Snap
   location    = var.location
   
   ssh_keys = var.ssh_keys
@@ -112,6 +112,7 @@ resource "hcloud_server" "orchestrator" {
 
   user_data = base64encode(templatefile("${path.module}/cloud-init-orchestrator.yaml", {
     orchestrator_script = base64encode(file("${path.module}/../scripts/orchestrator-init.sh"))
+    tailscale_auth_key  = var.tailscale_auth_key
   }))
 
   depends_on = [
@@ -129,7 +130,7 @@ resource "hcloud_server" "worker" {
   count       = var.worker_count
   name        = "${var.worker_name_prefix}-${count.index + 1}"
   server_type = var.server_type
-  image       = "322025898"  # thesis-test-node-1-1745851244
+  image       = "325043714"  # thesis-test-node-1-1745851244
   location    = var.location
   
   ssh_keys = var.ssh_keys
@@ -147,8 +148,9 @@ resource "hcloud_server" "worker" {
   }
 
   user_data = base64encode(templatefile("${path.module}/cloud-init-worker.yaml", {
-    worker_script = base64encode(file("${path.module}/../scripts/worker-init.sh"))
-    worker_id     = count.index + 1
+    worker_script      = base64encode(file("${path.module}/../scripts/worker-init.sh"))
+    worker_id          = count.index + 1
+    tailscale_auth_key = var.tailscale_auth_key
   }))
 
   depends_on = [

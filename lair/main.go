@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-const targetNodeCount = 3 // Set this to how many nodes you want to wait for
+const targetNodeCount = 4 // Set this to how many nodes you want to wait for
 
 type orchestratorServer struct {
 	pb.UnimplementedBenchmarkOrchestratorServer
@@ -123,21 +123,45 @@ func main() {
 	orchestrator.mu.Unlock()
 	log.Printf("All %d nodes registered!", targetNodeCount)
 
+	// Load infrastructure information from Terraform
+	infraOutputs, err := GetTerraformOutputs("")
+	if err != nil {
+		log.Printf("Warning: Failed to load Terraform outputs: %v", err)
+		log.Printf("Continuing with default execution plans...")
+	}
+
 	// SYNC phase
 	if err := orchestrator.syncNodes(); err != nil {
 		log.Fatalf("Sync failed: %v", err)
 	}
 
+	// Generate and distribute execution plans
+	log.Println("Generating execution plans for all nodes...")
 	for _, node := range orchestrator.nodes {
 		nodeID := node.NodeId
-		planStr, startTime := generateExecutionPlan() // or read from config
+		nodeIP := node.Ip
+
+		// Collect target IPs (other worker nodes) for this node's chaos plan
+		var targetIPs []string
+		if infraOutputs != nil {
+			for _, ip := range infraOutputs.WorkerPrivateIPs {
+				if ip != nodeIP {
+					targetIPs = append(targetIPs, ip)
+				}
+			}
+		}
+
+		planStr, startTime := generateExecutionPlanForNode(nodeIP, targetIPs)
 		plan := &pb.ExecutionPlan{
 			NodeId:    node.NodeId,
 			Plan:      planStr,
 			StartTime: startTime,
 		}
+
+		log.Printf("Sending plan to node %s at %s with %d target IPs", nodeID, nodeIP, len(targetIPs))
 		ack, err := orchestrator.SendExecutionPlan(context.Background(), plan)
 		log.Printf("Plan sent to %s: %v (err: %v)", nodeID, ack, err)
+
 		// Optionally: collect logs after some time
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

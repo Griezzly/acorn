@@ -29,6 +29,7 @@ write_files:
 
       [Service]
       Type=simple
+      Environment="TAILSCALE_AUTH_KEY=${tailscale_auth_key}"
       ExecStart=/opt/orchestrator-init.sh
       Restart=on-failure
       RestartSec=10

@@ -16,13 +16,45 @@ log() {
 wait_for_system() {
     log "Waiting for system to be ready..."
     sleep 30  # Allow system to fully boot
-    
+
     # Wait for network to be available
     until ping -c 1 8.8.8.8 >/dev/null 2>&1; do
         log "Waiting for network connectivity..."
         sleep 5
     done
     log "Network is ready"
+}
+
+# Initialize Tailscale
+init_tailscale() {
+    log "Initializing Tailscale..."
+
+    # Check if tailscale is already installed
+    if ! command -v tailscale >/dev/null 2>&1; then
+        log "ERROR: Tailscale not found - should be pre-installed in snapshot"
+        return 1
+    fi
+
+    log "Tailscale binary found"
+
+    # Authenticate with Tailscale using auth key from environment
+    if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+        log "Authenticating with Tailscale..."
+        tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="acorn-orchestrator" --accept-routes
+
+        if [ $? -eq 0 ]; then
+            log "Tailscale authentication successful"
+
+            # Get Tailscale IP
+            TAILSCALE_IP=$(tailscale ip -4)
+            log "Tailscale IP: $TAILSCALE_IP"
+        else
+            log "ERROR: Tailscale authentication failed"
+            return 1
+        fi
+    else
+        log "WARNING: TAILSCALE_AUTH_KEY not set, skipping Tailscale setup"
+    fi
 }
 
 # Setup Oakestra environment variables
@@ -337,13 +369,14 @@ start_readiness_server() {
 
 main() {
     log "=== Oakestra Orchestrator Initialization Starting ==="
-    
+
     wait_for_system
+    init_tailscale
     start_readiness_server
     init_oakestra_orchestrator
-    
+
     log "=== Orchestrator ready for worker connections ==="
-    
+
     # Keep the script running to maintain the readiness server
     wait
 }
