@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/opt/homebrew/bin/bash
 set -e
 
 # Benchmark automation script for Acorn distributed benchmarking system
@@ -75,7 +75,7 @@ git_pull_node() {
     log_info "[$node_name] Pulling latest code from git..."
 
     if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$node_ip" \
-        "cd $ACORN_DIR && git pull"; then
+        "cd $ACORN_DIR && sudo -u carsten git pull"; then
         log_success "[$node_name] Code updated successfully"
         return 0
     else
@@ -115,8 +115,8 @@ build_node() {
     log_info "[$node_name] Building project..."
 
     if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$node_ip" \
-        "cd $ACORN_DIR && go build ./..."; then
-        log_success "[$node_name] Build completed"
+    "cd $ACORN_DIR && sudo -u carsten mkdir -p bin && sudo -u carsten sh -c 'cd $ACORN_DIR && /usr/local/go/bin/go build -o bin/lair ./lair && /usr/local/go/bin/go build -o bin/acorn ./acorn && chmod +x bin/lair bin/acorn'"; then
+        log_success "[${node_name}] Build completed"
         return 0
     else
         log_error "[$node_name] Build failed"
@@ -156,7 +156,7 @@ kill_processes_node() {
     log_info "[$node_name] Killing existing $process_pattern processes..."
 
     ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$node_ip" \
-        "pkill -f '$process_pattern' || true"
+        "pkill -f '$process_pattern' 2>/dev/null || true" || true
 
     log_success "[$node_name] Processes killed"
 }
@@ -166,11 +166,18 @@ start_orchestrator() {
     log_info "Starting orchestrator (lair)..."
 
     # Kill any existing lair processes
-    kill_processes_node "$ORCHESTRATOR_IP" "orchestrator" "go run ./lair"
+    kill_processes_node "$ORCHESTRATOR_IP" "orchestrator" "bin/lair"
+    log_info "After killing processes"
 
     # Start lair in background
-    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$ORCHESTRATOR_IP" \
-        "cd $ACORN_DIR && nohup go run ./lair > /tmp/lair.log 2>&1 &"
+    log_info "Starting lair binary..."
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$ORCHESTRATOR_IP" \
+        "cd $ACORN_DIR && nohup ./bin/lair > /tmp/lair.log 2>&1 &"; then
+        log_info "SSH command succeeded"
+    else
+        log_error "SSH command failed with exit code $?"
+        return 1
+    fi
 
     # Wait a bit for the orchestrator to start
     sleep 2
@@ -194,11 +201,11 @@ start_worker() {
     log_info "[worker-$worker_idx] Starting acorn worker..."
 
     # Kill any existing acorn processes
-    kill_processes_node "$worker_ip" "worker-$worker_idx" "go run ./acorn"
+    kill_processes_node "$worker_ip" "worker-$worker_idx" "bin/acorn"
 
     # Start acorn in background, connecting to orchestrator's private IP
     ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$worker_ip" \
-        "cd $ACORN_DIR && nohup go run ./acorn --server $ORCHESTRATOR_PRIVATE_IP:50051 > /tmp/acorn.log 2>&1 &"
+        "cd $ACORN_DIR && nohup ./bin/acorn --server $ORCHESTRATOR_PRIVATE_IP:50051 > /tmp/acorn.log 2>&1 &"
 
     # Wait a bit for the worker to start
     sleep 1
@@ -241,10 +248,16 @@ start_all_workers() {
 trigger_benchmark() {
     log_info "Triggering benchmark execution..."
 
-    # Use the Go client to send StartBenchmark gRPC call
+    # Build and use the benchmark trigger client
     cd "$PROJECT_DIR"
 
-    if go run ./cmd/benchmark-trigger --server "$ORCHESTRATOR_IP:50051"; then
+    # Build the trigger binary if it doesn't exist or source is newer
+    if [ ! -f "bin/benchmark-trigger" ] || [ "cmd/benchmark-trigger" -nt "bin/benchmark-trigger" ]; then
+        log_info "Building benchmark-trigger..."
+        go build -o bin/benchmark-trigger ./cmd/benchmark-trigger
+    fi
+
+    if ./bin/benchmark-trigger --server "$ORCHESTRATOR_IP:50051"; then
         log_success "Benchmark started successfully!"
         return 0
     else
