@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-const targetNodeCount = 4 // Set this to how many nodes you want to wait for
+const targetNodeCount = 2 // Set this to how many nodes you want to wait for
 
 type orchestratorServer struct {
 	pb.UnimplementedBenchmarkOrchestratorServer

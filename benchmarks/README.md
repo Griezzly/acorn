@@ -84,19 +84,86 @@ A benchmark execution involves:
 2. **Workers (Acorn)**: Execute chaos engineering operations, send logs to Loki
 3. **Your Mac**: Collects and visualizes logs via Loki/Grafana
 
-### Step 1: Configure Target Node Count
+### Quick Start: Automated Execution
+
+The easiest way to run a complete benchmark is using the automation script:
+
+```bash
+./scripts/run-benchmark.sh
+```
+
+This script automates the entire workflow:
+1. ✅ Pulls latest code on all nodes (orchestrator + workers) via git
+2. ✅ Builds the Go project on all nodes
+3. ✅ Starts the orchestrator (lair) on port 50051
+4. ✅ Starts all worker nodes (acorn) on port 60051
+5. ✅ Waits for workers to register
+6. ✅ Triggers benchmark execution via gRPC
+
+**Script Options:**
+- `--skip-pull`: Skip the git pull step (useful if code is already up-to-date)
+- `--skip-build`: Skip the build step (useful for quick restarts)
+- `--collect-logs`: Only collect logs from all nodes (doesn't start benchmark)
+
+**Examples:**
+```bash
+# Quick restart without pulling/building
+./scripts/run-benchmark.sh --skip-pull --skip-build
+
+# Just collect logs after a benchmark run
+./scripts/run-benchmark.sh --collect-logs
+```
+
+**Requirements:**
+- Terraform infrastructure deployed (`terraform apply`)
+- SSH access to all nodes as root
+- `jq` installed locally (for parsing Terraform outputs)
+- Go 1.21+ on all nodes
+
+**What happens:**
+```
+1. Loading infrastructure from Terraform outputs...
+2. Pulling latest code on all nodes...
+3. Building project on all nodes...
+4. Starting orchestrator...
+5. Starting workers...
+6. Triggering benchmark via gRPC...
+✓ Benchmark started successfully!
+```
+
+**Log locations on nodes:**
+- Orchestrator: `/tmp/lair.log`
+- Workers: `/tmp/acorn.log`
+- Loki fallback: `/home/carsten/workspace/acorn/loki_fallback.log`
+
+**Collected logs saved to:**
+```
+benchmark-logs/YYYYMMDD-HHMMSS/
+├── orchestrator.log
+├── worker-1.log
+├── worker-2.log
+└── worker-N-fallback.log (if Loki push failed)
+```
+
+---
+
+### Manual Execution (Alternative)
+
+If you prefer manual control or need to debug individual steps:
+
+#### Step 1: Configure Target Node Count
 
 Edit `lair/main.go` to match your infrastructure:
 
 ```go
-const targetNodeCount = 4 // Total nodes (orchestrator counts as 1 + workers)
+const targetNodeCount = 4 // Total workers (not including orchestrator)
 ```
 
 For example:
-- 3 workers deployed � `targetNodeCount = 4`
-- 1 worker deployed � `targetNodeCount = 2`
+- 3 workers deployed → `targetNodeCount = 3`
+- 1 worker deployed → `targetNodeCount = 1`
 
-### Step 2: Start the Orchestrator
+#### Step 2: Start the Orchestrator
 
 SSH to your orchestrator node:
 ```bash
@@ -110,17 +177,18 @@ ssh root@<orchestrator-ip>
 
 On the orchestrator node:
 ```bash
-cd /path/to/acorn
+cd /home/carsten/workspace/acorn
 go run ./lair
 ```
 
 Expected output:
 ```
 Orchestrator server listening on :50051
-Waiting for 4 nodes to register. Currently: 0
+Waiting for 3 nodes to register. Currently: 0
+Ready to start benchmark. Send StartBenchmark gRPC call to begin.
 ```
 
-### Step 3: Start Worker Nodes
+#### Step 3: Start Worker Nodes
 
 For each worker, SSH and start the acorn process:
 
@@ -128,8 +196,8 @@ For each worker, SSH and start the acorn process:
 # SSH to worker
 ssh root@<worker-ip>
 
-# Start acorn (connects to orchestrator at 10.0.1.10)
-cd /path/to/acorn
+# Start acorn (connects to orchestrator's private IP)
+cd /home/carsten/workspace/acorn
 go run ./acorn --server 10.0.1.10:50051
 ```
 
@@ -138,12 +206,40 @@ As workers connect, the orchestrator logs will show:
 Received node registration: worker-1 at 10.0.0.10
 Received node registration: worker-2 at 10.0.0.11
 Received node registration: worker-3 at 10.0.0.12
-All 4 nodes registered!
+All 3 nodes registered!
+Ready to start benchmark. Send StartBenchmark gRPC call to begin.
 ```
 
-### Step 4: Benchmark Execution
+#### Step 4: Trigger Benchmark
 
-Once all nodes register, the benchmark automatically proceeds:
+Once all nodes are registered, trigger the benchmark:
+
+**Option 1: Using the Go benchmark trigger (recommended)**
+```bash
+# From your local machine
+cd /path/to/acorn
+go run ./cmd/benchmark-trigger --server <orchestrator-public-ip>:50051
+```
+
+**Option 2: Build standalone binary**
+```bash
+go build -o benchmark-trigger ./cmd/benchmark-trigger
+./benchmark-trigger --server 159.69.36.246:50051 --timeout 30
+```
+
+Expected output:
+```
+Connecting to orchestrator at 159.69.36.246:50051...
+Connected successfully!
+Sending StartBenchmark request...
+
+✓ Benchmark started successfully!
+Status: Benchmark started
+```
+
+#### Step 5: Benchmark Execution Flow
+
+Once triggered, the benchmark proceeds automatically:
 
 1. **Sync Phase**: Nodes synchronize clocks via NTP
 2. **Plan Generation**: Orchestrator creates chaos plans based on infrastructure topology

@@ -93,7 +93,7 @@ resource "hcloud_firewall" "inter_node_firewall" {
 resource "hcloud_server" "orchestrator" {
   name        = var.orchestrator_name
   server_type = var.server_type
-  image       = "325043710"  # Oakestra Root Snap
+  image       = "325116432"  # Oakestra Root Snap
   location    = var.location
   
   ssh_keys = var.ssh_keys
@@ -130,7 +130,7 @@ resource "hcloud_server" "worker" {
   count       = var.worker_count
   name        = "${var.worker_name_prefix}-${count.index + 1}"
   server_type = var.server_type
-  image       = "325043714"  # thesis-test-node-1-1745851244
+  image       = "325116417"  # thesis-test-node-1-1745851244
   location    = var.location
   
   ssh_keys = var.ssh_keys
