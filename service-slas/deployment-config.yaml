@@ -4,17 +4,19 @@
 orchestrator_ip: "${ORCHESTRATOR_IP}"  # Can be overridden by environment variable
 
 # Deployment order - services are deployed in this sequence to respect dependencies
+# NOTE: MongoDB is stateful and will always deploy only 1 instance regardless of config
+#       The deployment script automatically enforces this constraint
 deployment_order:
   - service: mongodb
-    instances: 1
+    instances: 1  # Stateful - always limited to 1 instance
     wait_time: 30  # seconds to wait after deployment before next service
 
   - service: authservice
-    instances: 1
+    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
     wait_time: 20
 
   - service: acmeair
-    instances: 1
+    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
     wait_time: 10
 
 # Database initialization - run after all services are deployed

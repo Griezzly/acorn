@@ -1,4 +1,4 @@
-package acorn
+package main
 
 import (
 	pb "acorn/grpc"
