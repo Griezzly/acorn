@@ -75,7 +75,7 @@ git_pull_node() {
     log_info "[$node_name] Pulling latest code from git..."
 
     if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$node_ip" \
-        "cd $ACORN_DIR && sudo -u carsten git pull"; then
+        "cd $ACORN_DIR && sudo -u carsten git pull --force"; then
         log_success "[$node_name] Code updated successfully"
         return 0
     else

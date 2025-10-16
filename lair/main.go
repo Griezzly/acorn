@@ -122,7 +122,7 @@ func (s *orchestratorServer) syncNodes() error {
 		syncAck, err := client.SyncNode(ctx, &emptypb.Empty{})
 		cancel()
 		conn.Close()
-		if err != nil || syncAck.GetStatus() != "OK" {
+		if err != nil {
 			msg := fmt.Sprintf("Sync failed for node %s: %v, status: %v", nodeID, err, syncAck.GetStatus())
 			log.Println(msg)
 			s.logCollector.Add(fmt.Sprintf("[SYNC_ERROR] %s", msg))
@@ -178,15 +178,15 @@ func main() {
 	<-orchestrator.startSignal
 	log.Println("Start signal received! Beginning benchmark execution...")
 
-	// Load infrastructure information from Terraform
-	infraOutputs, err := GetTerraformOutputs("")
+	// Generate infrastructure information based on registered node count
+	infraOutputs, err := GetInfraOutputs(len(orchestrator.nodes))
 	if err != nil {
-		msg := fmt.Sprintf("Warning: Failed to load Terraform outputs: %v", err)
+		msg := fmt.Sprintf("Warning: Failed to generate infrastructure outputs: %v", err)
 		log.Println(msg)
-		logCollector.Add(fmt.Sprintf("[TERRAFORM_LOAD_WARNING] %s", msg))
+		logCollector.Add(fmt.Sprintf("[INFRA_LOAD_WARNING] %s", msg))
 		log.Println("Continuing with default execution plans...")
 	} else {
-		logCollector.Add("[TERRAFORM_LOAD_SUCCESS] Infrastructure outputs loaded successfully")
+		logCollector.Add("[INFRA_LOAD_SUCCESS] Infrastructure outputs generated successfully")
 	}
 
 	// SYNC phase

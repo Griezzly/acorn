@@ -10,6 +10,7 @@ packages:
   - curl
   - netcat
   - jq
+  - ntpdate
 
 # Create initialization script from template
 write_files:
