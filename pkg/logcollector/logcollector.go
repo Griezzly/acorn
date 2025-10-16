@@ -112,7 +112,7 @@ type MonitoringConfig struct {
 // DefaultMonitoringConfig returns sensible defaults
 func DefaultMonitoringConfig() *MonitoringConfig {
 	return &MonitoringConfig{
-		Interval:        5 * time.Millisecond,
+		Interval:        100 * time.Millisecond,
 		EnableConnTrace: false, // Disabled by default as it can be expensive
 		EnablePing:      false, // Disabled by default to reduce network noise
 		PingTarget:      "8.8.8.8",

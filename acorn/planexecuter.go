@@ -146,7 +146,7 @@ func (p *PlanExecutor) PingRTT(host string) {
 func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 	// Start diagnostics monitoring during plan execution
 	monitorConfig := &logcollector.MonitoringConfig{
-		Interval:     5 * time.Millisecond,
+		Interval:     100 * time.Millisecond,
 		MetricPrefix: "WORKER_METRIC",
 	}
 	_ = pe.logCollector.StartMonitoring(monitorConfig)
