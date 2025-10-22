@@ -60,6 +60,17 @@ resource "hcloud_firewall" "benchmark_firewall" {
       "10.0.0.0/16"
     ]
   }
+
+  # Allow WireGuard VPN from specific IP (port 51820/udp)
+  # This allows Mac client to connect to worker nodes via VPN
+  rule {
+    direction = "in"
+    protocol  = "udp"
+    port      = "51820"
+    source_ips = [
+      "143.177.17.185/32"
+    ]
+  }
 }
 
 # Dynamic firewall rules for inter-node communication via public IPs
