@@ -106,6 +106,56 @@ init_oakestra_worker() {
     # Wait a moment for systemd service to start
     sleep 2
 
+    # Detect the worker's private IP from Hetzner private network (10.0.0.x)
+    # Try both eth0 and enp7s0 (Hetzner uses enp7s0 for private network)
+    PRIVATE_IP=$(ip addr show enp7s0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep '^10\.0\.' || \
+                 ip addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep '^10\.0\.')
+
+    if [ -z "$PRIVATE_IP" ]; then
+        log "WARNING: Could not detect private IP on 10.0.0.0/16 network, using primary IP"
+        PRIVATE_IP=$(ip route get 8.8.8.8 | grep -oP 'src \K\S+')
+    fi
+
+    log "Detected worker private IP: $PRIVATE_IP"
+
+    # Fix NetManager configuration to use correct orchestrator IP and node address
+    log "Configuring NetManager with orchestrator IP and node address..."
+    if [ -f /etc/netmanager/netcfg.json ]; then
+        # Update ClusterUrl to point to orchestrator private IP
+        # Update NodePublicAddress to use worker's private IP
+        jq --arg cluster_ip "$ORCHESTRATOR_IP" \
+           --arg node_ip "$PRIVATE_IP" \
+           '.ClusterUrl = $cluster_ip | .NodePublicAddress = $node_ip' \
+           /etc/netmanager/netcfg.json > /tmp/netcfg.json.tmp
+        mv /tmp/netcfg.json.tmp /etc/netmanager/netcfg.json
+
+        log "NetManager config updated:"
+        log "  ClusterUrl=$ORCHESTRATOR_IP"
+        log "  NodePublicAddress=$PRIVATE_IP"
+    else
+        log "WARNING: /etc/netmanager/netcfg.json not found"
+    fi
+
+    # Fix NodeEngine configuration to use correct node IP
+    log "Configuring NodeEngine with node IP address..."
+    if [ -f /etc/oakestra/conf.json ]; then
+        # Add node_ip field to NodeEngine config if it doesn't exist
+        jq --arg node_ip "$PRIVATE_IP" \
+           '.node_ip = $node_ip' \
+           /etc/oakestra/conf.json > /tmp/conf.json.tmp
+        mv /tmp/conf.json.tmp /etc/oakestra/conf.json
+
+        log "NodeEngine config updated with node_ip=$PRIVATE_IP"
+    else
+        log "WARNING: /etc/oakestra/conf.json not found"
+    fi
+
+    # Restart services to apply new configuration
+    log "Restarting NetManager and NodeEngine services..."
+    systemctl restart netmanager
+    systemctl restart nodeengine
+    sleep 3
+
     # Verify nodeengined daemon is running (systemd service)
     if pgrep -f "nodeengined" >/dev/null 2>&1; then
         NODEENGINE_PID=$(pgrep -f "nodeengined")

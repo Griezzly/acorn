@@ -150,69 +150,65 @@ EOF
 # Initialize Oakestra root orchestrator
 init_oakestra_orchestrator() {
     log "Starting Oakestra root orchestrator initialization..."
-    
+
     # Set the Oakestra directory (from snapshot)
     OAKESTRA_DIR="/home/carsten/oakestra"
-    
+
     if [ ! -d "$OAKESTRA_DIR" ]; then
         log "ERROR: Oakestra directory not found at $OAKESTRA_DIR"
         exit 1
     fi
-    
+
     cd "$OAKESTRA_DIR" || exit 1
     log "Changed to Oakestra directory: $(pwd)"
-    
-    # Debug: Show directory contents and compose files
-    log "Directory contents:"
-    ls -la | while IFS= read -r line; do log "  $line"; done
-    
-    # Check for compose files specifically
-    log "Available compose files:"
-    find . -name "*.yml" -o -name "*.yaml" | while IFS= read -r line; do log "  $line"; done
-    
+
     # Check if docker and docker-compose are available
     if ! command -v docker >/dev/null 2>&1; then
         log "ERROR: Docker not found"
         exit 1
     fi
-    
+
     if ! docker compose version >/dev/null 2>&1; then
         log "ERROR: Docker Compose v2 not found"
         exit 1
     fi
-    
+
     log "Docker and Docker Compose are available"
-    
+
     # Setup Oakestra environment variables
     setup_oakestra_environment
-    
+
     # Stop any existing Oakestra services (in case they're partially running)
     log "Stopping any existing Oakestra services..."
     docker compose -f 1-DOC.yaml down 2>/dev/null || true
-    
-    # Start the 1-DOC setup (root orchestrator + single cluster)
-    log "Starting Oakestra 1-DOC setup (root orchestrator + cluster)..."
-    
-    # Use the 1-DOC.yaml file which contains both root and cluster components
-    if [ -f "1-DOC.yaml" ]; then
-        log "Starting services with 1-DOC.yaml..."
-        docker compose -f 1-DOC.yaml up -d
-        COMPOSE_EXIT_CODE=$?
-    elif [ -f "1-DOC.yml" ]; then
-        log "Starting services with 1-DOC.yml..."
-        docker compose -f 1-DOC.yml up -d
-        COMPOSE_EXIT_CODE=$?
-    else
-        log "ERROR: 1-DOC compose file not found"
-        exit 1
+
+    # Use the stable docker compose file with pinned versions
+    STABLE_COMPOSE_FILE="oakestra-stable.yaml"
+
+    if [ ! -f "$STABLE_COMPOSE_FILE" ]; then
+        log "WARNING: Stable compose file not found at $STABLE_COMPOSE_FILE, checking for 1-DOC.yaml fallback..."
+        if [ -f "1-DOC.yaml" ]; then
+            STABLE_COMPOSE_FILE="1-DOC.yaml"
+        elif [ -f "1-DOC.yml" ]; then
+            STABLE_COMPOSE_FILE="1-DOC.yml"
+        else
+            log "ERROR: No compose file found"
+            exit 1
+        fi
     fi
-    
+
+    # Start the 1-DOC setup (root orchestrator + single cluster)
+    log "Starting Oakestra 1-DOC setup with stable versions from $STABLE_COMPOSE_FILE..."
+
+    docker compose -f "$STABLE_COMPOSE_FILE" up -d
+    COMPOSE_EXIT_CODE=$?
+
     if [ $COMPOSE_EXIT_CODE -ne 0 ]; then
         log "ERROR: Docker compose failed to start services (exit code: $COMPOSE_EXIT_CODE)"
         diagnose_container_failures
         exit 1
     fi
-    
+
     log "Docker compose services started successfully"
     
     # Give containers a moment to initialize
@@ -297,25 +293,22 @@ diagnose_container_failures() {
 # Check container health after startup
 check_container_health() {
     log "=== CHECKING CONTAINER HEALTH ==="
-    
-    # Get compose file name
-    COMPOSE_FILE="1-DOC.yaml"
-    if [ -f "1-DOC.yml" ]; then
-        COMPOSE_FILE="1-DOC.yml"
-    fi
-    
-    log "Container status:"
-    docker compose -f "$COMPOSE_FILE" ps
-    
+
+    # Use the stable compose file or fallback
+    local compose_file="${STABLE_COMPOSE_FILE:-oakestra-stable.yaml}"
+
+    log "Container status (using $compose_file):"
+    docker compose -f "$compose_file" ps
+
     # Check for failed/exited containers
-    FAILED_CONTAINERS=$(docker compose -f "$COMPOSE_FILE" ps --format "table {{.Name}}\t{{.State}}" | grep -v "running" | grep -v "NAME" | cut -f1 || true)
-    
+    FAILED_CONTAINERS=$(docker compose -f "$compose_file" ps --format "table {{.Name}}\t{{.State}}" | grep -v "running" | grep -v "NAME" | cut -f1 || true)
+
     if [ -n "$FAILED_CONTAINERS" ]; then
         log "Found failed/stopped containers, checking logs:"
         echo "$FAILED_CONTAINERS" | while IFS= read -r container; do
             if [ -n "$container" ]; then
                 log "=== Logs for $container ==="
-                docker compose -f "$COMPOSE_FILE" logs "$container" | tail -20 | while IFS= read -r line; do log "  $line"; done
+                docker compose -f "$compose_file" logs "$container" | tail -20 | while IFS= read -r line; do log "  $line"; done
             fi
         done
     else

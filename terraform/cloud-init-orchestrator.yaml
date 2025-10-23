@@ -19,6 +19,11 @@ write_files:
     encoding: b64
     content: ${orchestrator_script}
 
+  - path: /home/carsten/oakestra/oakestra-stable.yaml
+    permissions: '0644'
+    encoding: b64
+    content: ${stable_compose_file}
+
   - path: /etc/systemd/system/oakestra-orchestrator-init.service
     permissions: '0644'
     content: |
