@@ -12,11 +12,11 @@ deployment_order:
     wait_time: 30  # seconds to wait after deployment before next service
 
   - service: authservice
-    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
+    instances: 2  # Stateless - can be scaled (e.g., 2, 3, 4)
     wait_time: 20
 
   - service: acmeair
-    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
+    instances: 2  # Stateless - can be scaled (e.g., 2, 3, 4)
     wait_time: 10
 
 # Database initialization - run after all services are deployed

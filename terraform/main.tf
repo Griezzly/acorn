@@ -122,9 +122,9 @@ resource "hcloud_server" "orchestrator" {
   }
 
   user_data = base64encode(templatefile("${path.module}/cloud-init-orchestrator.yaml", {
-    orchestrator_script  = base64encode(file("${path.module}/../scripts/orchestrator-init.sh"))
-    stable_compose_file  = base64encode(file("${path.module}/oakestra-docker-compose.yaml"))
-    tailscale_auth_key   = var.tailscale_auth_key
+    orchestrator_script = base64encode(file("${path.module}/../scripts/orchestrator-init.sh"))
+    stable_compose_file = base64gzip(file("${path.module}/oakestra-docker-compose.yaml"))
+    tailscale_auth_key  = var.tailscale_auth_key
   }))
 
   depends_on = [
