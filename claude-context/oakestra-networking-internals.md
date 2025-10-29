@@ -475,6 +475,8 @@ DNAT Rules: Negligible performance impact
   // Depends on MongoDB service IP
 }
 ```
+**Accessing Netmanager logs**
+location on workder node : /var/log/oakestra/netmanager.log
 
 **Failure Factors**:
 - Complex multi-service dependencies
