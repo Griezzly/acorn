@@ -22,6 +22,63 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 
+# Readiness check function
+check_readiness() {
+    local service_name=$1
+    local check_type=$2
+    local timeout=$3
+    local retries=$4
+    local retry_delay=$5
+
+    if [ "$check_type" = "tcp" ]; then
+        local host=$6
+        local port=$7
+
+        log_info "  Checking TCP connectivity to ${host}:${port}..."
+
+        for attempt in $(seq 1 "$retries"); do
+            if timeout "$timeout" bash -c "cat < /dev/null > /dev/tcp/${host}/${port}" 2>/dev/null; then
+                log_info "  ✓ $service_name is ready (attempt $attempt/$retries)"
+                return 0
+            fi
+
+            if [ "$attempt" -lt "$retries" ]; then
+                log_warn "  Attempt $attempt/$retries failed, retrying in ${retry_delay}s..."
+                sleep "$retry_delay"
+            fi
+        done
+
+        log_error "  ✗ $service_name failed readiness check after $retries attempts"
+        return 1
+
+    elif [ "$check_type" = "http" ]; then
+        local endpoint=$6
+        local expected_statuses=$7
+
+        log_info "  Checking HTTP endpoint: $endpoint..."
+
+        for attempt in $(seq 1 "$retries"); do
+            http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout "$timeout" "$endpoint" 2>/dev/null || echo "000")
+
+            # Check if status code matches any expected status
+            for status in $expected_statuses; do
+                if [ "$http_code" = "$status" ]; then
+                    log_info "  ✓ $service_name is ready (HTTP $http_code, attempt $attempt/$retries)"
+                    return 0
+                fi
+            done
+
+            if [ "$attempt" -lt "$retries" ]; then
+                log_warn "  Attempt $attempt/$retries failed (HTTP $http_code), retrying in ${retry_delay}s..."
+                sleep "$retry_delay"
+            fi
+        done
+
+        log_error "  ✗ $service_name failed readiness check after $retries attempts (last HTTP code: $http_code)"
+        return 1
+    fi
+}
+
 # Check prerequisites
 for cmd in jq curl yq; do
     if ! command -v $cmd &> /dev/null; then
@@ -198,7 +255,35 @@ for i in $(seq 0 $((NUM_SERVICES - 1))); do
         fi
     done
 
-    if [ "$i" -lt $((NUM_SERVICES - 1)) ]; then
+    # Readiness check
+    READINESS_ENABLED=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.enabled // false")
+
+    if [ "$READINESS_ENABLED" = "true" ]; then
+        CHECK_TYPE=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.type")
+        TIMEOUT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.timeout")
+        RETRIES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.retries")
+        RETRY_DELAY=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.retry_delay")
+
+        if [ "$CHECK_TYPE" = "tcp" ]; then
+            HOST=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.host")
+            PORT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.port")
+
+            if ! check_readiness "$SVC_NAME" "tcp" "$TIMEOUT" "$RETRIES" "$RETRY_DELAY" "$HOST" "$PORT"; then
+                log_error "Deployment failed: $SVC_NAME not ready"
+                exit 1
+            fi
+
+        elif [ "$CHECK_TYPE" = "http" ]; then
+            ENDPOINT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.endpoint")
+            EXPECTED_STATUSES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.expected_status[]" | tr '\n' ' ')
+
+            if ! check_readiness "$SVC_NAME" "http" "$TIMEOUT" "$RETRIES" "$RETRY_DELAY" "$ENDPOINT" "$EXPECTED_STATUSES"; then
+                log_error "Deployment failed: $SVC_NAME not ready"
+                exit 1
+            fi
+        fi
+    elif [ "$i" -lt $((NUM_SERVICES - 1)) ]; then
+        # Fall back to wait time if no readiness check configured
         log_info "  Waiting ${WAIT_TIME}s for $SVC_NAME to stabilize..."
         sleep "$WAIT_TIME"
     fi

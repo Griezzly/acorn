@@ -9,15 +9,39 @@ orchestrator_ip: "${ORCHESTRATOR_IP}"  # Can be overridden by environment variab
 deployment_order:
   - service: mongodb
     instances: 1  # Stateful - always limited to 1 instance
-    wait_time: 30  # seconds to wait after deployment before next service
+    wait_time: 120  # seconds to wait after deployment before next service
+    readiness_check:
+      enabled: true
+      host: "10.30.10.11"
+      port: 27017
+      type: "tcp"  # TCP connection check for MongoDB
+      timeout: 5  # seconds
+      retries: 24  # number of retry attempts (24 * 5s = 120s max)
+      retry_delay: 5  # seconds between retries
 
   - service: authservice
-    instances: 2  # Stateless - can be scaled (e.g., 2, 3, 4)
-    wait_time: 20
+    instances: 1  # Stateless - can be scaled (e.g., 2, 3, 4)
+    wait_time: 120
+    readiness_check:
+      enabled: true
+      endpoint: "http://10.30.10.1:9443"  # Check if auth service port is responding
+      type: "http"
+      expected_status: [200, 404]  # Accept 200 or 404 (service is up even if endpoint doesn't exist)
+      timeout: 5
+      retries: 24
+      retry_delay: 5
 
   - service: acmeair
-    instances: 2  # Stateless - can be scaled (e.g., 2, 3, 4)
-    wait_time: 10
+    instances: 1  # Stateless - can be scaled (e.g., 2, 3, 4)
+    wait_time: 120
+    readiness_check:
+      enabled: true
+      endpoint: "http://10.30.10.2:9080"  # Check main page or any endpoint
+      type: "http"
+      expected_status: [200, 302, 404]  # Accept various HTTP responses indicating service is up
+      timeout: 5
+      retries: 24
+      retry_delay: 5
 
 # Database initialization - run after all services are deployed
 post_deployment:

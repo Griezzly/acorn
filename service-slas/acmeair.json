@@ -22,7 +22,6 @@
           "storage": 0,
           "code": "docker.io/library/mongo:4",
           "state": "",
-          "port": "27017:27017",
           "addresses": {
             "rr_ip": "10.30.10.11",
             "rr_ip_v6": "fdff:2000::10:11"
@@ -42,7 +41,6 @@
           "bandwidth_in": 0,
           "bandwidth_out": 0,
           "storage": 0,
-          "port": "9443:9443",
           "code": "docker.io/schubbcasten/acmeair-nodejs:v0.0.4-x86",
           "state": "",
           "added_files": [],
@@ -80,7 +78,10 @@
           },
           "added_files": [],
           "args": [],
-          "environment": ["AUTH_SERVICE=10.30.10.1:9443","MONGO_URL=mongodb://10.30.10.11:27017/acmeair"]
+          "environment": [
+            "AUTH_SERVICE=10.30.10.1:9443",
+            "MONGO_URL=mongodb://10.30.10.11:27017/acmeair"
+          ]
         }
       ]
     }

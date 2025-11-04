@@ -99,9 +99,58 @@ log_info "Total Memory: ${TOTAL_MEMORY} MB"
 
 # Verify active nodes match expected worker count
 echo ""
+
+# Check networking routes on each worker
+log_info "Verifying networking routes on worker nodes..."
+WORKER_IPS=$(terraform output -json worker_public_ipv4s 2>/dev/null | jq -r '.[]')
+NETWORKING_OK=true
+
+for WORKER_IP in $WORKER_IPS; do
+    WORKER_NAME=$(terraform output -json workers_info 2>/dev/null | jq -r ".[] | select(.public_ip == \"$WORKER_IP\") | .name")
+
+    # Check if the critical 10.16.0.0/12 route exists (covers 10.30.x.x service IPs)
+    ROUTE_CHECK=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@"$WORKER_IP" \
+        'ip route show | grep "10.16.0.0/12 dev goProxyTun"' 2>/dev/null || echo "")
+
+    if [ -n "$ROUTE_CHECK" ]; then
+        log_info "  ✓ $WORKER_NAME ($WORKER_IP): Service IP routing configured"
+    else
+        log_warn "  ✗ $WORKER_NAME ($WORKER_IP): Missing 10.16.0.0/12 route for service IPs"
+        log_warn "    This may cause service IP networking to fail"
+        log_warn "    Route should be auto-created when NetManager starts"
+        NETWORKING_OK=false
+    fi
+
+    # Additional check: verify goProxyTun interface has correct IP
+    TUN_IP=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@"$WORKER_IP" \
+        'ip addr show goProxyTun 2>/dev/null | grep "inet " | awk "{print \$2}"' 2>/dev/null || echo "")
+
+    if [[ "$TUN_IP" == "10.19.1.254/12" ]]; then
+        log_info "  ✓ $WORKER_NAME: goProxyTun interface configured correctly"
+    else
+        log_warn "  ✗ $WORKER_NAME: goProxyTun has unexpected IP: $TUN_IP (expected 10.19.1.254/12)"
+        NETWORKING_OK=false
+    fi
+done
+
+echo ""
+
+if [ "$NETWORKING_OK" = false ]; then
+    log_warn "Some networking issues detected. Service IP communication may not work."
+    log_warn "If deployments fail, check NetManager logs on affected workers:"
+    log_warn "  ssh root@<worker-ip> 'tail -50 /var/log/oakestra/netmanager.log'"
+fi
+
 if [ "$ACTIVE_NODES" -eq "$WORKER_COUNT" ]; then
-    log_info "✓ ${GREEN}Cluster verification PASSED${NC}"
-    log_info "✓ All $WORKER_COUNT worker node(s) successfully connected"
+    if [ "$NETWORKING_OK" = true ]; then
+        log_info "✓ ${GREEN}Cluster verification PASSED${NC}"
+        log_info "✓ All $WORKER_COUNT worker node(s) successfully connected"
+        log_info "✓ Networking routes verified on all workers"
+    else
+        log_warn "✓ ${YELLOW}Cluster verification PASSED with warnings${NC}"
+        log_info "✓ All $WORKER_COUNT worker node(s) successfully connected"
+        log_warn "⚠ Networking configuration issues detected (see above)"
+    fi
     echo ""
     echo "Cluster Details:"
     echo "$CLUSTER_INFO" | jq '.[0] | {cluster_name, active_nodes, total_cpu_cores, memory_in_mb, cluster_location}'
