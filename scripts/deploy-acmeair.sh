@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TERRAFORM_DIR="${SCRIPT_DIR}/../terraform"
-SLA_FILE="${SCRIPT_DIR}/../service-slas/acmeair.json"
+SLA_DIR="${SCRIPT_DIR}/../service-slas"
 CONFIG_FILE="${SCRIPT_DIR}/../service-slas/deployment-config.yaml"
 
 # Colors
@@ -87,8 +87,8 @@ for cmd in jq curl yq; do
     fi
 done
 
-if [ ! -f "$SLA_FILE" ]; then
-    log_error "SLA file not found: $SLA_FILE"
+if [ ! -d "$SLA_DIR" ]; then
+    log_error "SLA directory not found: $SLA_DIR"
     exit 1
 fi
 
@@ -163,18 +163,35 @@ fi
 
 log_info "✓ Authenticated"
 
-# Check for existing app
+# Get SLA files to deploy
+SLA_FILES=$(yq e '.sla_files[]' "$CONFIG_FILE")
+
+# Check for existing apps and optionally delete
 log_step "Checking existing deployments..."
 EXISTING=$(curl -s -X GET "${BASE_URL}/api/applications/" \
     -H "Authorization: Bearer $TOKEN")
 
-APP_ID=$(echo "$EXISTING" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r '.[] | select(.application_name == "acmeair") | .applicationID' 2>/dev/null || echo "")
+SHOULD_DELETE=false
+for SLA_FILE_NAME in $SLA_FILES; do
+    SLA_FILE="${SLA_DIR}/${SLA_FILE_NAME}"
 
-if [ -n "$APP_ID" ] && [ "$APP_ID" != "null" ]; then
-    log_warn "Application exists (ID: $APP_ID)"
+    if [ ! -f "$SLA_FILE" ]; then
+        log_error "SLA file not found: $SLA_FILE"
+        exit 1
+    fi
 
+    APP_NAME=$(jq -r '.applications[0].application_name' "$SLA_FILE")
+    APP_ID=$(echo "$EXISTING" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r ".[] | select(.application_name == \"$APP_NAME\") | .applicationID" 2>/dev/null || echo "")
+
+    if [ -n "$APP_ID" ] && [ "$APP_ID" != "null" ]; then
+        log_warn "Application $APP_NAME exists (ID: $APP_ID)"
+        SHOULD_DELETE=true
+    fi
+done
+
+if [ "$SHOULD_DELETE" = "true" ]; then
     if [ "${FORCE_REDEPLOY:-}" != "true" ]; then
-        read -p "Delete and redeploy? [y/N] " -n 1 -r
+        read -p "Delete existing applications and redeploy? [y/N] " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             log_info "Cancelled"
@@ -182,44 +199,88 @@ if [ -n "$APP_ID" ] && [ "$APP_ID" != "null" ]; then
         fi
     fi
 
-    log_info "Deleting application..."
-    curl -s -X DELETE "${BASE_URL}/api/application/${APP_ID}" \
-        -H "Authorization: Bearer $TOKEN" >/dev/null
+    # Delete existing applications
+    for SLA_FILE_NAME in $SLA_FILES; do
+        SLA_FILE="${SLA_DIR}/${SLA_FILE_NAME}"
+        APP_NAME=$(jq -r '.applications[0].application_name' "$SLA_FILE")
+        APP_ID=$(echo "$EXISTING" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r ".[] | select(.application_name == \"$APP_NAME\") | .applicationID" 2>/dev/null || echo "")
+
+        if [ -n "$APP_ID" ] && [ "$APP_ID" != "null" ]; then
+            log_info "Deleting $APP_NAME..."
+            curl -s -X DELETE "${BASE_URL}/api/application/${APP_ID}" \
+                -H "Authorization: Bearer $TOKEN" >/dev/null
+        fi
+    done
     sleep 10
-    log_info "✓ Deleted"
+    log_info "✓ Deleted existing applications"
 fi
 
-# Deploy SLA
-log_step "Deploying SLA to Oakestra..."
-DEPLOY_RESPONSE=$(curl -s -X POST "${BASE_URL}/api/application/" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $TOKEN" \
-    -d @"$SLA_FILE")
-
-APP_INFO=$(echo "$DEPLOY_RESPONSE" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq '.[0]' 2>/dev/null)
-
-APP_ID=$(echo "$APP_INFO" | jq -r '.applicationID')
-APP_NAME=$(echo "$APP_INFO" | jq -r '.application_name')
-
-if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
-    log_error "SLA deployment failed"
-    log_error "Response: $DEPLOY_RESPONSE"
-    exit 1
-fi
-
-log_info "✓ SLA deployed"
-log_info "  Application: $APP_NAME (ID: $APP_ID)"
-
-# Get service IDs from deployment
+# Deploy all SLAs
+log_step "Deploying SLAs to Oakestra..."
 declare -A SERVICE_IDS
-MICROSERVICES=$(echo "$APP_INFO" | jq -r '.microservices[]')
 
-for SVC_ID in $MICROSERVICES; do
-    SVC_DETAIL=$(curl -s -X GET "${BASE_URL}/api/service/${SVC_ID}" \
-        -H "Authorization: Bearer $TOKEN")
-    SVC_NAME=$(echo "$SVC_DETAIL" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r '.microservice_name')
-    SERVICE_IDS[$SVC_NAME]=$SVC_ID
-    log_info "  Service: $SVC_NAME -> $SVC_ID"
+for SLA_FILE_NAME in $SLA_FILES; do
+    SLA_FILE="${SLA_DIR}/${SLA_FILE_NAME}"
+
+    log_info "Deploying $SLA_FILE_NAME..."
+    DEPLOY_RESPONSE=$(curl -s -X POST "${BASE_URL}/api/application/" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $TOKEN" \
+        -d @"$SLA_FILE")
+
+    # Debug: Show raw response
+    log_info "  Raw API response length: ${#DEPLOY_RESPONSE} chars"
+    if [ ${#DEPLOY_RESPONSE} -lt 100 ]; then
+        log_warn "  Short response, showing full content: $DEPLOY_RESPONSE"
+    fi
+
+    # Try to parse response - handle both array and object responses
+    APP_INFO=$(echo "$DEPLOY_RESPONSE" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq '.[0]' 2>/dev/null)
+
+    # If array parsing failed, try as direct object
+    if [ -z "$APP_INFO" ] || [ "$APP_INFO" = "null" ]; then
+        log_warn "  Array parsing failed, trying as object..."
+        APP_INFO=$(echo "$DEPLOY_RESPONSE" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq '.' 2>/dev/null)
+    fi
+
+    APP_ID=$(echo "$APP_INFO" | jq -r '.applicationID' 2>/dev/null)
+    APP_NAME=$(echo "$APP_INFO" | jq -r '.application_name' 2>/dev/null)
+
+    if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
+        log_error "SLA deployment failed for $SLA_FILE_NAME"
+        log_error "Raw response (first 500 chars): ${DEPLOY_RESPONSE:0:500}"
+        log_error "Parsed APP_INFO: $APP_INFO"
+        exit 1
+    fi
+
+    log_info "  ✓ Application: $APP_NAME (ID: $APP_ID)"
+
+    # Get service IDs from this deployment
+    MICROSERVICES=$(echo "$APP_INFO" | jq -r '.microservices[]' 2>/dev/null)
+
+    if [ -z "$MICROSERVICES" ]; then
+        log_warn "  No microservices found in response"
+        log_warn "  APP_INFO microservices field: $(echo "$APP_INFO" | jq -r '.microservices' 2>/dev/null)"
+    fi
+
+    for SVC_ID in $MICROSERVICES; do
+        log_info "    Fetching details for service ID: $SVC_ID"
+        SVC_DETAIL=$(curl -s -X GET "${BASE_URL}/api/service/${SVC_ID}" \
+            -H "Authorization: Bearer $TOKEN")
+
+        # Debug: Show response length and first 100 chars
+        log_info "    Service detail response length: ${#SVC_DETAIL} chars"
+
+        SVC_NAME=$(echo "$SVC_DETAIL" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r '.microservice_name' 2>/dev/null)
+
+        if [ -z "$SVC_NAME" ] || [ "$SVC_NAME" = "null" ]; then
+            log_warn "    Failed to get service name for ID: $SVC_ID"
+            log_warn "    Response (first 300 chars): ${SVC_DETAIL:0:300}"
+        else
+            SERVICE_IDS[$SVC_NAME]=$SVC_ID
+            log_info "    ✓ Collected service: $SVC_NAME -> $SVC_ID"
+        fi
+    done
 done
 
 # Deploy instances in order
@@ -228,6 +289,12 @@ NUM_SERVICES=$(echo "$DEPLOYMENT_ORDER" | jq 'length')
 
 echo ""
 log_step "Deploying service instances..."
+
+# Debug: Show all collected service IDs
+log_info "Available services:"
+for svc in "${!SERVICE_IDS[@]}"; do
+    log_info "  - $svc: ${SERVICE_IDS[$svc]}"
+done
 
 for i in $(seq 0 $((NUM_SERVICES - 1))); do
     SVC_NAME=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].service")
@@ -238,6 +305,7 @@ for i in $(seq 0 $((NUM_SERVICES - 1))); do
 
     if [ -z "$SVC_ID" ] || [ "$SVC_ID" = "null" ]; then
         log_error "Service ID not found for: $SVC_NAME"
+        log_error "Available services: ${!SERVICE_IDS[@]}"
         exit 1
     fi
 
@@ -336,6 +404,24 @@ for SVC_NAME in "${!SERVICE_IDS[@]}"; do
 done
 
 echo ""
-log_info "Access: http://10.30.10.2:9080"
+
+# Get nginxingress worker node IP
+INGRESS_SERVICE_ID="${SERVICE_IDS[nginxingress]}"
+if [ -n "$INGRESS_SERVICE_ID" ]; then
+    log_info "Retrieving ingress worker node IP..."
+    INSTANCES_RESPONSE=$(curl -s -X GET "${BASE_URL}/api/service/${INGRESS_SERVICE_ID}/instance" \
+        -H "Authorization: Bearer $TOKEN")
+    WORKER_IP=$(echo "$INSTANCES_RESPONSE" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g' | jq -r '.[0].public_ip // empty')
+
+    if [ -n "$WORKER_IP" ]; then
+        log_info "Access: http://${WORKER_IP}:80"
+    else
+        log_warn "Could not retrieve worker IP - using service IP"
+        log_info "Access: http://10.30.13.13:80"
+    fi
+else
+    log_info "Access: http://10.30.13.13:80"
+fi
+
 log_info "Credentials: uid0@email.com / password"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

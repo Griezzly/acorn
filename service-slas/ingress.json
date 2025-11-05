@@ -1,0 +1,40 @@
+{
+  "sla_version": "v2.0",
+  "customerID": "Admin",
+  "applications": [
+    {
+      "applicationID": "",
+      "application_name": "ingress",
+      "application_namespace": "ingress",
+      "application_desc": "Nginx ingress controller for external access to acmeair services",
+      "microservices": [
+        {
+          "microserviceID": "",
+          "microservice_name": "nginxingress",
+          "microservice_namespace": "test",
+          "virtualization": "container",
+          "cmd": [
+            "sh",
+            "-c",
+            "cat > /etc/nginx/nginx.conf <<'EOF'\nevents { worker_connections 1024; }\nhttp {\n    access_log /dev/stdout;\n    error_log /dev/stderr;\n    upstream acmeair { server 10.30.10.2:9080; }\n    upstream authservice { server 10.30.10.1:9443; }\n    server {\n        listen 80;\n        server_name _;\n        location / {\n            proxy_pass http://acmeair;\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n            proxy_connect_timeout 5s;\n            proxy_read_timeout 10s;\n        }\n        location /health/acmeair {\n            proxy_pass http://acmeair/;\n            proxy_connect_timeout 3s;\n            proxy_read_timeout 5s;\n            access_log off;\n        }\n        location /health/authservice {\n            proxy_pass http://authservice/;\n            proxy_connect_timeout 3s;\n            proxy_read_timeout 5s;\n            access_log off;\n        }\n        location /auth/ {\n            proxy_pass http://authservice/;\n            proxy_set_header Host $host;\n            proxy_set_header X-Real-IP $remote_addr;\n        }\n        location /health {\n            access_log off;\n            return 200 'healthy';\n            add_header Content-Type text/plain;\n        }\n    }\n}\nEOF\nnginx -g 'daemon off;'"
+          ],
+          "memory": 100,
+          "vcpus": 1,
+          "vgpus": 0,
+          "vtpus": 0,
+          "bandwidth_in": 0,
+          "bandwidth_out": 0,
+          "storage": 0,
+          "code": "docker.io/library/nginx:latest",
+          "state": "",
+          "port": "80:80",
+          "addresses": {
+            "rr_ip": "10.30.13.13",
+            "rr_ip_v6": "fdff:2000::13:13"
+        },
+          "added_files": []
+        }
+      ]
+    }
+  ]
+}

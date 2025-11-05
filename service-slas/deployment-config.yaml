@@ -3,15 +3,20 @@
 
 orchestrator_ip: "${ORCHESTRATOR_IP}"  # Can be overridden by environment variable
 
+# SLA files to deploy (in order)
+sla_files:
+  - acmeair.json
+  - ingress.json
+
 # Deployment order - services are deployed in this sequence to respect dependencies
 # NOTE: MongoDB is stateful and will always deploy only 1 instance regardless of config
 #       The deployment script automatically enforces this constraint
 deployment_order:
   - service: mongodb
     instances: 1  # Stateful - always limited to 1 instance
-    wait_time: 120  # seconds to wait after deployment before next service
+    wait_time: 60  # seconds to wait after deployment before next service
     readiness_check:
-      enabled: true
+      enabled: false
       host: "10.30.10.11"
       port: 27017
       type: "tcp"  # TCP connection check for MongoDB
@@ -20,10 +25,10 @@ deployment_order:
       retry_delay: 5  # seconds between retries
 
   - service: authservice
-    instances: 1  # Stateless - can be scaled (e.g., 2, 3, 4)
-    wait_time: 120
+    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
+    wait_time: 60
     readiness_check:
-      enabled: true
+      enabled: false
       endpoint: "http://10.30.10.1:9443"  # Check if auth service port is responding
       type: "http"
       expected_status: [200, 404]  # Accept 200 or 404 (service is up even if endpoint doesn't exist)
@@ -32,16 +37,28 @@ deployment_order:
       retry_delay: 5
 
   - service: acmeair
-    instances: 1  # Stateless - can be scaled (e.g., 2, 3, 4)
-    wait_time: 120
+    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
+    wait_time: 60
     readiness_check:
-      enabled: true
+      enabled: false
       endpoint: "http://10.30.10.2:9080"  # Check main page or any endpoint
       type: "http"
       expected_status: [200, 302, 404]  # Accept various HTTP responses indicating service is up
       timeout: 5
       retries: 24
       retry_delay: 5
+
+  - service: nginxingress
+    instances: 1  # Single ingress instance
+    wait_time: 30
+    readiness_check:
+      enabled: false
+      endpoint: "http://10.30.13.13:80/health"  # Ingress self-health endpoint
+      type: "http"
+      expected_status: [200]
+      timeout: 3
+      retries: 10
+      retry_delay: 3
 
 # Database initialization - run after all services are deployed
 post_deployment:

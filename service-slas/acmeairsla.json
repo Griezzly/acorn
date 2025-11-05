@@ -1,1 +1,0 @@
-"[{\"_id\": {\"$oid\": \"6887cc146fd7037bfa6ee33c\"}, \"applicationID\": \"6887cc146fd7037bfa6ee33c\", \"application_name\": \"acmeair\", \"application_namespace\": \"acmeair\", \"application_desc\": \"acmeair application\", \"microservices\": [\"6887cc146fd7037bfa6ee33d\", \"6887d11c6fd7037bfa6ee33f\", \"6887d14f6fd7037bfa6ee340\"], \"userId\": \"Admin\"}]"

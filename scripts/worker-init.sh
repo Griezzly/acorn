@@ -152,8 +152,8 @@ init_oakestra_worker() {
 
     # Restart services to apply new configuration
     log "Restarting NetManager and NodeEngine services..."
-    systemctl restart netmanager
-    systemctl restart nodeengine
+    NodeEngine stop
+    NodeEngine -a "$ORCHESTRATOR_IP" -d
     sleep 3
 
     # Verify nodeengined daemon is running (systemd service)
