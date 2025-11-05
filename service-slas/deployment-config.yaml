@@ -6,7 +6,6 @@ orchestrator_ip: "${ORCHESTRATOR_IP}"  # Can be overridden by environment variab
 # SLA files to deploy (in order)
 sla_files:
   - acmeair.json
-  - ingress.json
 
 # Deployment order - services are deployed in this sequence to respect dependencies
 # NOTE: MongoDB is stateful and will always deploy only 1 instance regardless of config
