@@ -28,10 +28,16 @@ variable "worker_name_prefix" {
   default     = "thesis-test-worker"
 }
 
-variable "server_type" {
-  description = "Server type for both nodes"
+variable "worker_server_type" {
+  description = "Server type for worker nodes"
   type        = string
   default     = "cpx11"
+}
+
+variable "orchestrator_server_type" {
+  description = "Server type for the orchestrator node"
+  type        = string
+  default     = "cpx22"
 }
 
 variable "location" {
@@ -50,5 +56,17 @@ variable "tailscale_auth_key" {
   description = "Tailscale authentication key for joining the tailnet"
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "loki_url" {
+  description = "Loki server URL (Tailscale hostname or IP) for centralized logging"
+  type        = string
+  default     = ""
+}
+
+variable "prometheus_url" {
+  description = "Prometheus server URL (Tailscale hostname or IP) for metrics collection"
+  type        = string
   default     = ""
 }

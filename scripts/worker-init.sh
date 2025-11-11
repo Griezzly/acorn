@@ -94,6 +94,43 @@ wait_for_orchestrator() {
     log "Orchestrator is ready - proceeding with worker initialization"
 }
 
+# Start observability services (Promtail and Node Exporter)
+start_observability_services() {
+    log "Starting observability services..."
+
+    # Start Node Exporter for metrics collection
+    if [ -f /usr/local/bin/node_exporter ]; then
+        log "Starting Node Exporter..."
+        systemctl enable node_exporter
+        systemctl start node_exporter
+
+        if systemctl is-active --quiet node_exporter; then
+            log "Node Exporter started successfully"
+        else
+            log "WARNING: Node Exporter failed to start"
+        fi
+    else
+        log "WARNING: Node Exporter binary not found, skipping"
+    fi
+
+    # Start Promtail for log collection
+    if [ -f /usr/local/bin/promtail ] && [ -f /etc/promtail/config.yml ]; then
+        log "Starting Promtail..."
+        systemctl enable promtail
+        systemctl start promtail
+
+        if systemctl is-active --quiet promtail; then
+            log "Promtail started successfully"
+        else
+            log "WARNING: Promtail failed to start"
+        fi
+    else
+        log "WARNING: Promtail binary or config not found, skipping"
+    fi
+
+    log "Observability services initialized"
+}
+
 # Initialize Oakestra worker node
 init_oakestra_worker() {
     log "Starting Oakestra worker node initialization..."
@@ -190,6 +227,10 @@ main() {
     get_worker_info
     wait_for_system
     init_tailscale
+
+    # Start observability services after Tailscale is connected
+    start_observability_services
+
     wait_for_orchestrator
     init_oakestra_worker
 

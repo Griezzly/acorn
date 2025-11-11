@@ -1,0 +1,32 @@
+# Add this to your Prometheus configuration file (prometheus.yml)
+# This configures Prometheus to scrape metrics from all Oakestra worker nodes
+
+scrape_configs:
+  # Scrape Node Exporter metrics from worker nodes
+  - job_name: 'oakestra-workers'
+    scrape_interval: 5s  # Collect metrics every 5 seconds for detailed time-series
+    scrape_timeout: 3s
+
+    static_configs:
+      # Add one target for each worker node
+      # Format: <tailscale-hostname>:9100 or <tailscale-ip>:9100
+${worker_targets}
+
+    # Optional: Add relabeling to include worker hostname in metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        regex: '(.+):9100'
+        target_label: worker
+        replacement: '$1'
+
+  # Optional: Scrape metrics from the orchestrator node
+  - job_name: 'oakestra-orchestrator'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+    static_configs:
+      - targets: ['${orchestrator_target}:9100']
+        labels:
+          role: 'orchestrator'

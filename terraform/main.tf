@@ -103,7 +103,7 @@ resource "hcloud_firewall" "inter_node_firewall" {
 # Orchestrator server (lair) - created from snapshot 304469121
 resource "hcloud_server" "orchestrator" {
   name        = var.orchestrator_name
-  server_type = var.server_type
+  server_type = var.orchestrator_server_type
   image       = "325116432"  # Oakestra Root Snap
   location    = var.location
   
@@ -141,7 +141,7 @@ resource "hcloud_server" "orchestrator" {
 resource "hcloud_server" "worker" {
   count       = var.worker_count
   name        = "${var.worker_name_prefix}-${count.index + 1}"
-  server_type = var.server_type
+  server_type = var.worker_server_type
   image       = "325116417"  # thesis-test-node-1-1745851244
   location    = var.location
   
@@ -163,6 +163,10 @@ resource "hcloud_server" "worker" {
     worker_script      = base64encode(file("${path.module}/../scripts/worker-init.sh"))
     worker_id          = count.index + 1
     tailscale_auth_key = var.tailscale_auth_key
+    promtail_config    = base64encode(templatefile("${path.module}/promtail-config.yml", {
+      loki_url         = var.loki_url
+      worker_hostname  = "${var.worker_name_prefix}-${count.index + 1}"
+    }))
   }))
 
   depends_on = [

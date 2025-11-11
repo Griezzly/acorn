@@ -1,0 +1,88 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://${loki_url}:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 102400
+
+scrape_configs:
+  # Scrape containerd logs for Oakestra application containers
+  - job_name: oakestra-containers
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: oakestra-containers
+          host: ${worker_hostname}
+          __path__: /var/lib/containerd/io.containerd.grpc.v1.cri/containers/*/log/*.log
+
+    pipeline_stages:
+      # Parse containerd CRI log format: timestamp stream flags content
+      - regex:
+          expression: '^(?P<time>[^ ]+) (?P<stream>stdout|stderr) (?P<flags>[^ ]*) (?P<content>.*)$'
+
+      # Parse timestamp
+      - timestamp:
+          source: time
+          format: RFC3339Nano
+
+      # Add stream as label
+      - labels:
+          stream:
+
+      # Extract container ID from file path
+      - match:
+          selector: '{job="oakestra-containers"}'
+          stages:
+            - regex:
+                source: filename
+                expression: '/var/lib/containerd/io.containerd.grpc.v1.cri/containers/(?P<container_id>[^/]+)/log/'
+            - labels:
+                container_id:
+
+      # Output the actual log content
+      - output:
+          source: content
+
+  # Scrape Oakestra NetManager logs
+  - job_name: oakestra-netmanager
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: netmanager
+          host: ${worker_hostname}
+          __path__: /var/log/oakestra/netmanager.log
+
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>[^\]]+)\] (?P<message>.*)$'
+      - labels:
+          level:
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02 15:04:05'
+
+  # Scrape Oakestra NodeEngine logs
+  - job_name: oakestra-nodeengine
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nodeengine
+          host: ${worker_hostname}
+          __path__: /var/log/oakestra/nodeengine.log
+
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>[^\]]+)\] (?P<message>.*)$'
+      - labels:
+          level:
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02 15:04:05'
