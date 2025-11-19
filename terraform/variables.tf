@@ -13,7 +13,7 @@ variable "orchestrator_name" {
 variable "worker_count" {
   description = "Number of worker nodes to create"
   type        = number
-  default     = 1
+  default     = 2
   
   validation {
     condition     = var.worker_count >= 1 && var.worker_count <= 10
@@ -61,12 +61,6 @@ variable "tailscale_auth_key" {
 
 variable "loki_url" {
   description = "Loki server URL (Tailscale hostname or IP) for centralized logging"
-  type        = string
-  default     = ""
-}
-
-variable "prometheus_url" {
-  description = "Prometheus server URL (Tailscale hostname or IP) for metrics collection"
   type        = string
   default     = ""
 }

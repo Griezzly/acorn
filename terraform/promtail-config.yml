@@ -11,7 +11,7 @@ clients:
     batchsize: 102400
 
 scrape_configs:
-  # Scrape containerd logs for Oakestra application containers
+  # Scrape Oakestra application container logs
   - job_name: oakestra-containers
     static_configs:
       - targets:
@@ -19,35 +19,48 @@ scrape_configs:
         labels:
           job: oakestra-containers
           host: ${worker_hostname}
-          __path__: /var/lib/containerd/io.containerd.grpc.v1.cri/containers/*/log/*.log
+          __path__: /var/log/oakestra/containers/*
 
     pipeline_stages:
-      # Parse containerd CRI log format: timestamp stream flags content
+      # Extract container name from file path
       - regex:
-          expression: '^(?P<time>[^ ]+) (?P<stream>stdout|stderr) (?P<flags>[^ ]*) (?P<content>.*)$'
+          source: filename
+          expression: '/var/log/oakestra/containers/(?P<container_name>[^/]+)$'
 
-      # Parse timestamp
-      - timestamp:
-          source: time
-          format: RFC3339Nano
-
-      # Add stream as label
+      # Add container name as label
       - labels:
-          stream:
+          container_name:
 
-      # Extract container ID from file path
-      - match:
-          selector: '{job="oakestra-containers"}'
-          stages:
-            - regex:
-                source: filename
-                expression: '/var/lib/containerd/io.containerd.grpc.v1.cri/containers/(?P<container_id>[^/]+)/log/'
-            - labels:
-                container_id:
+      # Extract service name by removing .instance.X suffix
+      # Example: acmeair.acmeair.mongodb.acmeair.instance.0 -> acmeair.acmeair.mongodb.acmeair
+      - regex:
+          source: container_name
+          expression: '^(?P<service_name>.+)\.instance\.\d+$'
 
-      # Output the actual log content
-      - output:
-          source: content
+      # Add service name as label
+      - labels:
+          service_name:
+
+      # Remove ANSI color codes and parse log content
+      # This handles both structured logs (with timestamps) and plain text
+      - replace:
+          expression: '\x1b\[\d+m'
+          replace: ''
+
+      # Try to parse structured logs with timestamps
+      # Format: [2025-11-19 12:06:26.039] [INFO] authservice_app - message
+      - regex:
+          expression: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\] \[(?P<level>[^\]]+)\] (?P<logger>[^\-]+) - ?(?P<message>.*)'
+
+      # Parse timestamp if available
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02 15:04:05.000'
+
+      # Add level and logger as labels if present
+      - labels:
+          level:
+          logger:
 
   # Scrape Oakestra NetManager logs
   - job_name: oakestra-netmanager
@@ -60,13 +73,16 @@ scrape_configs:
           __path__: /var/log/oakestra/netmanager.log
 
     pipeline_stages:
+      # Parse two formats:
+      # 1. INFO-2025/10/15 10:00:05 file.go:59: message
+      # 2. 2025/10/15 10:00:05 message
       - regex:
-          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>[^\]]+)\] (?P<message>.*)$'
+          expression: '^(?:(?P<level>INFO|WARN|ERROR|DEBUG)-)?(?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})(?: [^:]+:)? (?P<message>.*)$'
       - labels:
           level:
       - timestamp:
           source: timestamp
-          format: '2006-01-02 15:04:05'
+          format: '2006/01/02 15:04:05'
 
   # Scrape Oakestra NodeEngine logs
   - job_name: oakestra-nodeengine
@@ -79,10 +95,11 @@ scrape_configs:
           __path__: /var/log/oakestra/nodeengine.log
 
     pipeline_stages:
+      # Parse format: INFO-2025/11/19 11:46:30 file.go:104: message
       - regex:
-          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>[^\]]+)\] (?P<message>.*)$'
+          expression: '^(?:(?P<level>INFO|WARN|ERROR|DEBUG)-)?(?P<timestamp>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})(?: [^:]+:)? (?P<message>.*)$'
       - labels:
           level:
       - timestamp:
           source: timestamp
-          format: '2006-01-02 15:04:05'
+          format: '2006/01/02 15:04:05'

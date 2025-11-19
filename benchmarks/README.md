@@ -6,18 +6,17 @@ This guide covers executing distributed benchmarks with Acorn. It assumes you ha
 
 ### Local Machine Requirements
 
-Before running benchmarks, ensure your Mac has the following running:
+Before running benchmarks, ensure your Mac has:
 
-1. **Docker Desktop** - For running Loki and Grafana
-2. **Tailscale** - For secure connectivity to cloud nodes
-3. **Loki** - Log aggregation backend (port 3100)
-4. **Grafana** - Log visualization UI (port 3000)
+1. **Docker Desktop** - For running the observability stack (Prometheus, Loki, Grafana)
+2. **Docker Compose** - Included with Docker Desktop
+3. **Tailscale** - For secure connectivity to cloud nodes
+4. **Terraform** - For infrastructure deployment
 
 ### One-Time Setup on Your Mac
 
-#### 1. Tailscale
+#### 1. Install Tailscale
 
-Install and authenticate:
 ```bash
 # Install Tailscale
 brew install tailscale
@@ -28,50 +27,44 @@ tailscale ip -4
 # Example: 100.77.231.113
 ```
 
-#### 2. Loki (Log Aggregation)
+#### 2. Setup Observability Stack
 
-Start Loki container:
+Use the automated setup script to deploy Prometheus, Loki, and Grafana:
+
 ```bash
-docker run -d \
-  --name loki \
-  -p 3100:3100 \
-  --restart unless-stopped \
-  grafana/loki:latest \
-  -config.file=/etc/loki/local-config.yaml
-
-# Verify it's running
-curl http://localhost:3100/ready
-# Should return: ready
+cd scripts
+./setup-observability.sh
 ```
 
-#### 3. Grafana (Log Visualization)
+This script automatically:
+- Generates Prometheus configuration with all worker targets
+- Deploys Prometheus (port 9090), Loki (port 3100), and Grafana (port 3000)
+- Configures Grafana datasources (Loki and Prometheus)
+- Verifies all services are running and healthy
 
-Start Grafana container:
+**Access UIs:**
+- Grafana: http://localhost:3000 (login: admin/admin)
+- Prometheus: http://localhost:9090
+- Loki: http://localhost:3100 (API only)
+
+**Managing services:**
 ```bash
-docker run -d \
-  --name grafana \
-  -p 3000:3000 \
-  --restart unless-stopped \
-  -e "GF_SECURITY_ADMIN_PASSWORD=admin" \
-  -e "GF_SECURITY_ADMIN_USER=admin" \
-  grafana/grafana:latest
+cd benchmarks
+
+# View status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+
+# Restart services
+docker-compose restart
+
+# Stop services
+docker-compose down
 ```
 
-Configure Loki as datasource:
-```bash
-curl -X POST http://admin:admin@localhost:3000/api/datasources \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Loki",
-    "type": "loki",
-    "url": "http://host.docker.internal:3100",
-    "access": "proxy",
-    "basicAuth": false,
-    "isDefault": true
-  }'
-```
-
-Access Grafana at http://localhost:3000 (login: admin/admin).
+For detailed information, see [OBSERVABILITY_README.md](OBSERVABILITY_README.md).
 
 ---
 
@@ -417,25 +410,38 @@ Check worker connectivity:
 nc -zv 10.0.1.10 50051
 ```
 
-### Container Management
+### Observability Stack Management
+
+All services (Prometheus, Loki, Grafana) are managed via Docker Compose:
 
 ```bash
+cd benchmarks
+
 # Check container status
-docker ps --filter "name=loki" --filter "name=grafana"
+docker-compose ps
 
-# View logs
-docker logs -f loki
-docker logs -f grafana
+# View all logs
+docker-compose logs -f
 
-# Restart containers
-docker restart loki grafana
+# View specific service logs
+docker-compose logs -f prometheus
+docker-compose logs -f loki
+docker-compose logs -f grafana
 
-# Stop containers
-docker stop loki grafana
+# Restart all services
+docker-compose restart
 
-# Start containers
-docker start loki grafana
+# Restart specific service
+docker-compose restart prometheus
+
+# Stop all services
+docker-compose down
+
+# Start all services
+docker-compose up -d
 ```
+
+For more details, see [OBSERVABILITY_README.md](OBSERVABILITY_README.md).
 
 ---
 

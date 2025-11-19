@@ -135,6 +135,11 @@ start_observability_services() {
 init_oakestra_worker() {
     log "Starting Oakestra worker node initialization..."
 
+    # Create dedicated directory for container logs
+    log "Creating container logs directory..."
+    mkdir -p /var/log/oakestra/containers
+    chmod 755 /var/log/oakestra/containers
+
     # Start NodeEngine with orchestrator IP address (-d runs it as systemd daemon)
     log "Starting NodeEngine daemon with orchestrator at $ORCHESTRATOR_IP..."
 
@@ -173,16 +178,19 @@ init_oakestra_worker() {
         log "WARNING: /etc/netmanager/netcfg.json not found"
     fi
 
-    # Fix NodeEngine configuration to use correct node IP
-    log "Configuring NodeEngine with node IP address..."
+    # Fix NodeEngine configuration to use correct node IP and container logs directory
+    log "Configuring NodeEngine with node IP address and container logs directory..."
     if [ -f /etc/oakestra/conf.json ]; then
-        # Add node_ip field to NodeEngine config if it doesn't exist
+        # Add node_ip and app_logs fields to NodeEngine config
         jq --arg node_ip "$PRIVATE_IP" \
-           '.node_ip = $node_ip' \
+           --arg app_logs "/var/log/oakestra/containers" \
+           '.node_ip = $node_ip | .app_logs = $app_logs' \
            /etc/oakestra/conf.json > /tmp/conf.json.tmp
         mv /tmp/conf.json.tmp /etc/oakestra/conf.json
 
-        log "NodeEngine config updated with node_ip=$PRIVATE_IP"
+        log "NodeEngine config updated:"
+        log "  node_ip=$PRIVATE_IP"
+        log "  app_logs=/var/log/oakestra/containers"
     else
         log "WARNING: /etc/oakestra/conf.json not found"
     fi

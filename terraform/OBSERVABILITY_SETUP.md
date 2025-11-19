@@ -16,8 +16,7 @@ This setup provides:
 Add to `terraform.tfvars`:
 
 ```hcl
-loki_url = "your-mac.tailnet.ts.net"        # Your Loki Tailscale hostname
-prometheus_url = "your-mac.tailnet.ts.net"  # Your Prometheus Tailscale hostname (optional)
+loki_url = "macbookpro"        # Your Loki Tailscale hostname
 ```
 
 ### 2. Deploy Infrastructure
@@ -32,28 +31,37 @@ This automatically:
 - Configures them to start after Tailscale connects
 - Begins collecting logs and metrics immediately
 
-### 3. Configure Prometheus
+### 3. Setup Observability Stack (Prometheus, Loki, Grafana)
 
-Add worker nodes to your `prometheus.yml`:
+Run the automated setup script:
 
-```yaml
-scrape_configs:
-  - job_name: 'oakestra-workers'
-    scrape_interval: 5s
-    static_configs:
-      - targets:
-          - 'thesis-test-worker-1.tailnet.ts.net:9100'
-          - 'thesis-test-worker-2.tailnet.ts.net:9100'
+```bash
+cd scripts
+./setup-observability.sh
 ```
 
-Then restart: `docker restart prometheus`
+This automatically:
+- Generates `prometheus.yml` with all worker targets
+- Deploys Prometheus, Loki, and Grafana via Docker Compose
+- Configures Grafana datasources automatically
+- Configures 30-day metric retention
+- Verifies connectivity to all workers
+
+**What gets deployed:**
+- **Prometheus**: Metrics collection (port 9090)
+- **Loki**: Log aggregation (port 3100)
+- **Grafana**: Visualization UI (port 3000, admin/admin)
+
+All services run in a Docker network and can communicate with each other.
 
 ### 4. Access Grafana
 
-Open `http://localhost:3000` and:
-1. Import Node Exporter dashboard (ID: 1860)
-2. Query logs with LogQL
-3. Query metrics with PromQL
+Open http://localhost:3000 (login: admin/admin) and:
+1. Datasources are pre-configured (Loki and Prometheus)
+2. Import Node Exporter dashboard (ID: 1860) for metrics
+3. Import custom benchmark dashboard from `benchmarks/grafana-dashboard.json`
+4. Query logs with LogQL in Explore
+5. Query metrics with PromQL in Explore
 
 ## What Gets Collected
 
@@ -133,7 +141,7 @@ tailscale status
 # But Loki should receive logs
 
 # Test Node Exporter connectivity
-curl http://thesis-test-worker-1.tailnet.ts.net:9100/metrics | head
+curl http://acorn-worker-1:9100/metrics | head
 
 # Query Loki
 curl "http://localhost:3100/loki/api/v1/label/job/values" | jq
@@ -176,7 +184,61 @@ rate(node_network_receive_bytes_total{device="eth0"}[1m])
 - **[METRICS.md](METRICS.md)** - Complete Node Exporter/Prometheus metrics guide
 - **[terraform/README.md](README.md)** - Infrastructure deployment guide
 
+## Docker Compose Management
+
+All observability services are managed via Docker Compose in the `benchmarks/` directory.
+
+### Common Commands
+
+```bash
+cd benchmarks
+
+# View status of all containers
+docker-compose ps
+
+# View logs from all services
+docker-compose logs -f
+
+# View logs from specific service
+docker-compose logs -f prometheus
+docker-compose logs -f loki
+docker-compose logs -f grafana
+
+# Restart all services
+docker-compose restart
+
+# Restart specific service
+docker-compose restart prometheus
+
+# Stop all services
+docker-compose down
+
+# Start all services
+docker-compose up -d
+
+# Stop and remove all data (including volumes)
+docker-compose down -v
+```
+
+### Updating Configuration
+
+If you modify `prometheus.yml` or add more workers:
+
+```bash
+cd benchmarks
+
+# Reload Prometheus configuration without restart
+curl -X POST http://localhost:9090/-/reload
+
+# Or restart Prometheus container
+docker-compose restart prometheus
+```
+
 ## Troubleshooting
+
+**Docker Compose not found:**
+- Install Docker Desktop which includes Docker Compose
+- Or install standalone: `brew install docker-compose`
 
 **Services not starting:**
 - Check `/var/log/cloud-init-output.log` for installation errors
@@ -190,8 +252,8 @@ rate(node_network_receive_bytes_total{device="eth0"}[1m])
 
 **No metrics in Prometheus:**
 - Verify Node Exporter is running: `systemctl status node_exporter`
-- Test via Tailscale: `curl http://worker.tailnet.ts.net:9100/metrics`
-- Check Prometheus scrape config and targets
+- Test via Tailscale: `curl http://acorn-worker-1:9100/metrics`
+- Check Prometheus scrape config and targets at http://localhost:9090/targets
 
 **Old workers not updated:**
 - Destroy and recreate: `terraform destroy -target=hcloud_server.worker && terraform apply`
