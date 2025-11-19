@@ -160,25 +160,42 @@ echo "  Adding worker targets to prometheus.yml:"
 
 if [ -n "$TAILSCALE_WORKERS" ]; then
     # Use Tailscale worker IPs
-    # Build the targets section with proper indentation
-    TARGETS=""
+    # Build the targets section with proper indentation for Node Exporter (port 9100)
+    NODE_EXPORTER_TARGETS=""
+    # Build the targets section with proper indentation for cAdvisor (port 8080)
+    CADVISOR_TARGETS=""
+
     while IFS='#' read -r ip hostname; do
-        echo "    - $ip:9100 ($hostname)"
-        if [ -z "$TARGETS" ]; then
-            TARGETS="          - '$ip:9100'  # $hostname"
+        echo "    - $ip:9100 (Node Exporter - $hostname)"
+        echo "    - $ip:8080 (cAdvisor - $hostname)"
+
+        # Node Exporter targets
+        if [ -z "$NODE_EXPORTER_TARGETS" ]; then
+            NODE_EXPORTER_TARGETS="          - '$ip:9100'  # $hostname"
         else
-            TARGETS="${TARGETS}\n          - '$ip:9100'  # $hostname"
+            NODE_EXPORTER_TARGETS="${NODE_EXPORTER_TARGETS}\n          - '$ip:9100'  # $hostname"
+        fi
+
+        # cAdvisor targets
+        if [ -z "$CADVISOR_TARGETS" ]; then
+            CADVISOR_TARGETS="          - '$ip:8080'  # $hostname"
+        else
+            CADVISOR_TARGETS="${CADVISOR_TARGETS}\n          - '$ip:8080'  # $hostname"
         fi
     done <<< "$TAILSCALE_WORKERS"
 
-    # Replace the placeholder with actual targets using sed
-    sed "s|# WORKER_TARGETS_PLACEHOLDER|$TARGETS|g" "$PROMETHEUS_CONFIG" > "$PROMETHEUS_CONFIG.tmp"
+    # Replace the placeholders with actual targets using sed
+    sed "s|# WORKER_TARGETS_PLACEHOLDER|$NODE_EXPORTER_TARGETS|g" "$PROMETHEUS_CONFIG" > "$PROMETHEUS_CONFIG.tmp"
+    mv "$PROMETHEUS_CONFIG.tmp" "$PROMETHEUS_CONFIG"
+    sed "s|# CADVISOR_TARGETS_PLACEHOLDER|$CADVISOR_TARGETS|g" "$PROMETHEUS_CONFIG" > "$PROMETHEUS_CONFIG.tmp"
     mv "$PROMETHEUS_CONFIG.tmp" "$PROMETHEUS_CONFIG"
 else
     echo "    (No Tailscale workers found - prometheus.yml will have empty targets)"
     echo "    You can add them manually later or re-run this script"
-    # Remove the placeholder line for empty targets
+    # Remove the placeholder lines for empty targets
     sed '/# WORKER_TARGETS_PLACEHOLDER/d' "$PROMETHEUS_CONFIG" > "$PROMETHEUS_CONFIG.tmp"
+    mv "$PROMETHEUS_CONFIG.tmp" "$PROMETHEUS_CONFIG"
+    sed '/# CADVISOR_TARGETS_PLACEHOLDER/d' "$PROMETHEUS_CONFIG" > "$PROMETHEUS_CONFIG.tmp"
     mv "$PROMETHEUS_CONFIG.tmp" "$PROMETHEUS_CONFIG"
 fi
 

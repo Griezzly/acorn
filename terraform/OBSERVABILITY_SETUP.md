@@ -6,7 +6,8 @@ Complete observability stack for Oakestra worker nodes with centralized logging 
 
 This setup provides:
 - **Container logs** → Loki (via Promtail)
-- **System metrics** → Prometheus (via Node Exporter)
+- **Host metrics** → Prometheus (via Node Exporter)
+- **Container metrics** → Prometheus (via cAdvisor)
 - **Visualization** → Grafana (dashboards for logs + metrics)
 
 ## Quick Setup
@@ -27,7 +28,7 @@ terraform apply
 ```
 
 This automatically:
-- Installs Promtail and Node Exporter on all worker nodes
+- Installs Promtail, Node Exporter, and cAdvisor on all worker nodes
 - Configures them to start after Tailscale connects
 - Begins collecting logs and metrics immediately
 
@@ -71,12 +72,21 @@ Open http://localhost:3000 (login: admin/admin) and:
 - **NetManager logs** (network overlay)
 - **NodeEngine logs** (orchestration)
 
-### Metrics (Port 9100 → Prometheus)
+### Host Metrics (Port 9100 → Prometheus via Node Exporter)
 
 - **CPU**: usage %, load averages, per-core stats
 - **Memory**: used/free/available, swap
 - **Disk I/O**: read/write rates, latency
 - **Network**: bytes in/out, packets, errors
+
+### Container Metrics (Port 8080 → Prometheus via cAdvisor)
+
+- **Per-container CPU**: usage, throttling, system/user time
+- **Per-container Memory**: usage, RSS, cache, swap, working set
+- **Per-container Network**: bytes sent/received, packets, errors
+- **Per-container Disk I/O**: read/write operations and bytes
+- **Per-container Filesystem**: usage and limits
+- Container labels including: `name`, `namespace`, `image`
 
 ## Initialization Flow
 
@@ -85,15 +95,18 @@ Cloud-init (on boot)
   ├── Install packages (curl, jq, unzip)
   ├── Download Promtail binary → /usr/local/bin/promtail
   ├── Download Node Exporter binary → /usr/local/bin/node_exporter
+  ├── Download cAdvisor binary → /usr/local/bin/cadvisor
   ├── Write config files:
   │   ├── /etc/promtail/config.yml
   │   ├── /etc/systemd/system/promtail.service
-  │   └── /etc/systemd/system/node_exporter.service
+  │   ├── /etc/systemd/system/node_exporter.service
+  │   └── /etc/systemd/system/cadvisor.service
   └── Run worker-init.sh
       ├── Wait for network
       ├── Connect to Tailscale ✓
-      ├── Start Promtail ✓ (now can reach Loki)
-      ├── Start Node Exporter ✓ (exposes metrics on :9100)
+      ├── Start Node Exporter ✓ (exposes host metrics on :9100)
+      ├── Start cAdvisor ✓ (exposes container metrics on :8080)
+      ├── Start Promtail ✓ (pushes logs to Loki)
       ├── Wait for orchestrator
       └── Start Oakestra NodeEngine
 ```
@@ -113,7 +126,8 @@ Cloud-init (on boot)
 ### Resource Efficient
 - Promtail: ~50MB RAM
 - Node Exporter: ~10MB RAM
-- Negligible CPU usage
+- cAdvisor: ~30MB RAM
+- Negligible CPU usage for all services
 
 ## Verification
 
@@ -128,7 +142,11 @@ curl http://localhost:9080/metrics  # Promtail metrics
 
 # Check Node Exporter
 systemctl status node_exporter
-curl http://localhost:9100/metrics | head  # Node metrics
+curl http://localhost:9100/metrics | head  # Host metrics
+
+# Check cAdvisor
+systemctl status cadvisor
+curl http://localhost:8080/metrics | grep container_cpu_usage_seconds_total | head  # Container metrics
 
 # Check Tailscale
 tailscale status
@@ -137,17 +155,17 @@ tailscale status
 ### Check from Mac
 
 ```bash
-# Test Promtail connectivity (should fail - Promtail doesn't expose HTTP)
-# But Loki should receive logs
-
 # Test Node Exporter connectivity
 curl http://acorn-worker-1:9100/metrics | head
+
+# Test cAdvisor connectivity
+curl http://acorn-worker-1:8080/metrics | grep container_cpu_usage_seconds_total | head
 
 # Query Loki
 curl "http://localhost:3100/loki/api/v1/label/job/values" | jq
 
-# Query Prometheus
-curl "http://localhost:9090/api/v1/targets" | jq '.data.activeTargets[] | select(.labels.job=="oakestra-workers")'
+# Query Prometheus targets
+curl "http://localhost:9090/api/v1/targets" | jq '.data.activeTargets[] | select(.labels.job=="oakestra-workers" or .labels.job=="cadvisor")'
 ```
 
 ## Example Queries
@@ -165,17 +183,39 @@ curl "http://localhost:9090/api/v1/targets" | jq '.data.activeTargets[] | select
 {job="netmanager", level="ERROR"}
 ```
 
-### Metrics (PromQL in Grafana)
+### Host Metrics (PromQL in Grafana)
 
 ```promql
-# CPU usage %
+# Host CPU usage %
 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)
 
-# Memory usage %
+# Host memory usage %
 100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
 
 # Network traffic (bytes/sec)
 rate(node_network_receive_bytes_total{device="eth0"}[1m])
+```
+
+### Container Metrics (PromQL in Grafana)
+
+```promql
+# Container CPU usage (cores)
+sum by (name) (rate(container_cpu_usage_seconds_total{namespace="oakestra"}[1m]))
+
+# Container memory usage (MB)
+sum by (name) (container_memory_usage_bytes{namespace="oakestra"}) / 1024 / 1024
+
+# Container memory working set (MB) - more accurate than usage
+sum by (name) (container_memory_working_set_bytes{namespace="oakestra"}) / 1024 / 1024
+
+# Container network received bytes/sec
+sum by (name) (rate(container_network_receive_bytes_total{namespace="oakestra"}[1m]))
+
+# Container network transmitted bytes/sec
+sum by (name) (rate(container_network_transmit_bytes_total{namespace="oakestra"}[1m]))
+
+# Containers by service (aggregated by service name from logs)
+# Note: Use service_name label from Promtail logs to correlate with container metrics
 ```
 
 ## Documentation
@@ -250,10 +290,17 @@ docker-compose restart prometheus
 - Check Promtail can reach Loki: `curl http://<loki_url>:3100/ready`
 - Check Promtail config: `cat /etc/promtail/config.yml`
 
-**No metrics in Prometheus:**
+**No host metrics in Prometheus:**
 - Verify Node Exporter is running: `systemctl status node_exporter`
 - Test via Tailscale: `curl http://acorn-worker-1:9100/metrics`
 - Check Prometheus scrape config and targets at http://localhost:9090/targets
+
+**No container metrics in Prometheus:**
+- Verify cAdvisor is running: `systemctl status cadvisor`
+- Test via Tailscale: `curl http://acorn-worker-1:8080/metrics | grep container_cpu`
+- Check cAdvisor logs: `journalctl -u cadvisor -f`
+- Verify containerd socket: `ls -l /run/containerd/containerd.sock`
+- Check Prometheus targets at http://localhost:9090/targets for cadvisor job
 
 **Old workers not updated:**
 - Destroy and recreate: `terraform destroy -target=hcloud_server.worker && terraform apply`

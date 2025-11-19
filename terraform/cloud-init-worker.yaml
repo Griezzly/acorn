@@ -62,6 +62,29 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  # cAdvisor systemd service
+  - path: /etc/systemd/system/cadvisor.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=cAdvisor - Container Metrics Collector
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart=/usr/local/bin/cadvisor \
+        --logtostderr \
+        --port=8080 \
+        --containerd=/run/containerd/containerd.sock \
+        --containerd-namespace=oakestra \
+        --docker_only=false
+      Restart=on-failure
+      RestartSec=10s
+
+      [Install]
+      WantedBy=multi-user.target
+
 # System configuration
 runcmd:
   # Update system clock
@@ -86,6 +109,11 @@ runcmd:
   - cd /tmp && tar xvfz node_exporter-1.7.0.linux-amd64.tar.gz
   - mv /tmp/node_exporter-1.7.0.linux-amd64/node_exporter /usr/local/bin/
   - chmod +x /usr/local/bin/node_exporter
+
+  # Install cAdvisor v0.53.0 (but don't start yet - will start after Tailscale is ready)
+  - cd /tmp && curl -L -o cadvisor "https://github.com/google/cadvisor/releases/download/v0.53.0/cadvisor-v0.53.0-linux-amd64"
+  - mv /tmp/cadvisor /usr/local/bin/cadvisor
+  - chmod +x /usr/local/bin/cadvisor
   - systemctl daemon-reload
 
   # Run worker initialization with Tailscale auth key (NodeEngine runs as daemon, so script can exit)

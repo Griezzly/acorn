@@ -94,11 +94,11 @@ wait_for_orchestrator() {
     log "Orchestrator is ready - proceeding with worker initialization"
 }
 
-# Start observability services (Promtail and Node Exporter)
+# Start observability services (Promtail, Node Exporter, and cAdvisor)
 start_observability_services() {
     log "Starting observability services..."
 
-    # Start Node Exporter for metrics collection
+    # Start Node Exporter for host metrics collection
     if [ -f /usr/local/bin/node_exporter ]; then
         log "Starting Node Exporter..."
         systemctl enable node_exporter
@@ -111,6 +111,21 @@ start_observability_services() {
         fi
     else
         log "WARNING: Node Exporter binary not found, skipping"
+    fi
+
+    # Start cAdvisor for container metrics collection
+    if [ -f /usr/local/bin/cadvisor ]; then
+        log "Starting cAdvisor..."
+        systemctl enable cadvisor
+        systemctl start cadvisor
+
+        if systemctl is-active --quiet cadvisor; then
+            log "cAdvisor started successfully on port 8080"
+        else
+            log "WARNING: cAdvisor failed to start"
+        fi
+    else
+        log "WARNING: cAdvisor binary not found, skipping"
     fi
 
     # Start Promtail for log collection
