@@ -1,0 +1,7 @@
+# JMeter Results
+results/
+
+# Temporary files
+*.log
+*.tmp
+hosts.csv
