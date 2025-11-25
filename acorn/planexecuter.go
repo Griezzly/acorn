@@ -182,7 +182,8 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 
 	start := time.Now()
 	for _, step := range steps {
-		wait := time.Duration(step.Timestamp)*time.Millisecond - time.Since(start)
+		scheduled := start.Add(time.Duration(step.Timestamp) * time.Millisecond)
+		wait := time.Until(scheduled)
 		if wait > 0 {
 			time.Sleep(wait)
 		}

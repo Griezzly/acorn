@@ -331,6 +331,49 @@ Diagnostics - CPU: 45.23%, Mem: 32.10%, NetIn: 123456B, NetOut: 789012B
 
 ---
 
+## Benchmark Scenarios
+
+This section provides pre-configured benchmark scenarios with exact commands to reproduce them. All scenarios assume a 5-worker cluster and use the automated execution script.
+
+### Scenario 1: Light Intermittent Partitions (20/20 Rule)
+
+**Objective:** Test application resilience under light network instability
+
+**Configuration:**
+- **Duration:** 10 minutes (600 seconds)
+- **Affected nodes:** 20% (1 out of 5 workers)
+- **Downtime:** 20% of total duration (120 seconds)
+- **Disconnect pattern:** 2 disconnects of 60 seconds each
+- **Type:** Full network isolation
+
+**Use case:** Simulates realistic network instability scenarios like brief network interruptions, router failures, or cloud provider network issues.
+
+**Command:**
+```bash
+./scripts/run-benchmark.sh \
+  --duration 600 \
+  --disconnect-nodes 1 \
+  --disconnect-duration 60 \
+  --disconnect-amount 2 \
+  --full-disconnect true
+```
+
+**Expected behavior:**
+- 1 randomly selected worker will lose connectivity to all other nodes
+- First disconnect occurs randomly in the first 5 minutes
+- Second disconnect occurs randomly in the second 5 minutes
+- Each disconnect lasts exactly 60 seconds
+- Total downtime: 120 seconds out of 600 (20%)
+- Application should demonstrate recovery between disconnects
+
+**Monitoring focus:**
+- Service recovery time after reconnection
+- Request success/failure rates during partition
+- Data consistency after partition heals
+- Error handling in application logs
+
+---
+
 ## Customizing Benchmarks
 
 ### Modifying Execution Plans

@@ -4,7 +4,7 @@ set -e
 # Benchmark automation script for Acorn distributed benchmarking system
 # This script orchestrates the entire benchmark workflow:
 # 1. Pull latest code on all nodes
-# 2. Start orchestrator (lair)
+# 2. Start orchestrator (lair) with configurable benchmark parameters
 # 3. Start workers (acorn)
 # 4. Trigger benchmark execution via gRPC
 
@@ -12,6 +12,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ACORN_DIR="/home/carsten/workspace/acorn"
 SSH_USER="root"
+
+# Default benchmark parameters
+SCENARIO_TYPE="disconnect"
+DURATION=60
+DISCONNECT_NODES=1
+DISCONNECT_DURATION=10
+FULL_DISCONNECT=true
+DISCONNECT_AMOUNT=1
 
 # Colors for output
 RED='\033[0;31m'
@@ -161,19 +169,34 @@ kill_processes_node() {
     log_success "[$node_name] Processes killed"
 }
 
-# Start orchestrator (lair)
+# Start orchestrator (lair) with benchmark parameters
 start_orchestrator() {
-    log_info "Starting orchestrator (lair)..."
+    log_info "Starting orchestrator (lair) with benchmark configuration..."
 
     # Kill any existing lair processes
     kill_processes_node "$ORCHESTRATOR_IP" "orchestrator" "bin/lair"
-    log_info "After killing processes"
 
-    # Start lair in background
-    log_info "Starting lair binary..."
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$ORCHESTRATOR_IP" \
-        "cd $ACORN_DIR && nohup ./bin/lair > /tmp/lair.log 2>&1 &"; then
-        log_info "SSH command succeeded"
+    # Build command with benchmark parameters
+    local lair_cmd="cd $ACORN_DIR && nohup ./bin/lair"
+    lair_cmd="$lair_cmd --scenario=$SCENARIO_TYPE"
+    lair_cmd="$lair_cmd --duration=$DURATION"
+    lair_cmd="$lair_cmd --disconnect-nodes=$DISCONNECT_NODES"
+    lair_cmd="$lair_cmd --disconnect-duration=$DISCONNECT_DURATION"
+    lair_cmd="$lair_cmd --full-disconnect=$FULL_DISCONNECT"
+    lair_cmd="$lair_cmd --disconnect-amount=$DISCONNECT_AMOUNT"
+    lair_cmd="$lair_cmd > /tmp/lair.log 2>&1 &"
+
+    log_info "Benchmark configuration:"
+    log_info "  Scenario: $SCENARIO_TYPE"
+    log_info "  Duration: ${DURATION}s"
+    log_info "  Disconnect nodes: $DISCONNECT_NODES"
+    log_info "  Disconnect duration: ${DISCONNECT_DURATION}s"
+    log_info "  Full disconnect: $FULL_DISCONNECT"
+    log_info "  Disconnect amount: $DISCONNECT_AMOUNT"
+
+    # Start lair in background with parameters
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$ORCHESTRATOR_IP" "$lair_cmd"; then
+        log_info "Orchestrator command sent successfully"
     else
         log_error "SSH command failed with exit code $?"
         return 1
@@ -320,9 +343,56 @@ main() {
                 COLLECT_LOGS_ONLY=true
                 shift
                 ;;
+            --scenario)
+                SCENARIO_TYPE="$2"
+                shift 2
+                ;;
+            --duration)
+                DURATION="$2"
+                shift 2
+                ;;
+            --disconnect-nodes)
+                DISCONNECT_NODES="$2"
+                shift 2
+                ;;
+            --disconnect-duration)
+                DISCONNECT_DURATION="$2"
+                shift 2
+                ;;
+            --full-disconnect)
+                FULL_DISCONNECT="$2"
+                shift 2
+                ;;
+            --disconnect-amount)
+                DISCONNECT_AMOUNT="$2"
+                shift 2
+                ;;
+            --help|-h)
+                echo "Usage: $0 [OPTIONS]"
+                echo ""
+                echo "Automation Options:"
+                echo "  --skip-pull              Skip git pull on all nodes"
+                echo "  --skip-build             Skip building project on all nodes"
+                echo "  --collect-logs           Only collect logs, don't run benchmark"
+                echo ""
+                echo "Benchmark Configuration:"
+                echo "  --scenario <type>        Scenario type (default: disconnect)"
+                echo "  --duration <seconds>     Benchmark duration in seconds (default: 60)"
+                echo "  --disconnect-nodes <n>   Number of nodes to disconnect (default: 1)"
+                echo "  --disconnect-duration <s> Duration of each disconnect in seconds (default: 10)"
+                echo "  --full-disconnect <bool> Full or partial disconnect (default: true)"
+                echo "  --disconnect-amount <n>  Number of disconnects per node (default: 1)"
+                echo ""
+                echo "Examples:"
+                echo "  $0                                    # Run with default settings"
+                echo "  $0 --duration=120 --disconnect-nodes=2"
+                echo "  $0 --full-disconnect=false --disconnect-amount=3"
+                echo "  $0 --skip-pull --skip-build          # Quick re-run"
+                exit 0
+                ;;
             *)
                 log_error "Unknown option: $1"
-                echo "Usage: $0 [--skip-pull] [--skip-build] [--collect-logs]"
+                echo "Use --help for usage information"
                 exit 1
                 ;;
         esac

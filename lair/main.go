@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"log"
@@ -15,7 +16,17 @@ import (
 	"google.golang.org/grpc"
 )
 
-const targetNodeCount = 2 // Set this to how many nodes you want to wait for
+const targetNodeCount = 5 // Set this to how many nodes you want to wait for
+
+// Command-line flags for benchmark configuration
+var (
+	scenarioType            = flag.String("scenario", "disconnect", "Benchmark scenario type (disconnect)")
+	duration                = flag.Int64("duration", 60, "Benchmark duration in seconds")
+	disconnectNodeCount     = flag.Int("disconnect-nodes", 1, "Number of nodes to disconnect (disconnect scenario)")
+	disconnectDuration      = flag.Int64("disconnect-duration", 10, "Duration of each disconnect in seconds (disconnect scenario)")
+	fullDisconnect          = flag.Bool("full-disconnect", true, "Full disconnect vs partial (disconnect scenario)")
+	disconnectAmountPerNode = flag.Int("disconnect-amount", 1, "Number of disconnects per node (disconnect scenario)")
+)
 
 type orchestratorServer struct {
 	pb.UnimplementedBenchmarkOrchestratorServer
@@ -69,7 +80,7 @@ func (s *orchestratorServer) StartBenchmark(ctx context.Context, _ *emptypb.Empt
 		msg := fmt.Sprintf("Not enough nodes registered: %d/%d", len(s.nodes), targetNodeCount)
 		log.Println(msg)
 		s.logCollector.Add(fmt.Sprintf("[START_COMMAND_REJECTED] %s", msg))
-		return &pb.ExecutionAck{Status: fmt.Sprintf("Not ready: %s", msg)}, fmt.Errorf(msg)
+		return &pb.ExecutionAck{Status: fmt.Sprintf("Not ready: %s", msg)}, fmt.Errorf("%s", msg)
 	}
 
 	s.started = true
@@ -140,6 +151,9 @@ func (s *orchestratorServer) syncNodes() error {
 }
 
 func main() {
+	// Parse command-line flags
+	flag.Parse()
+
 	// Initialize log collector for orchestrator
 	logCollector := &logcollector.LogCollector{}
 
@@ -178,17 +192,6 @@ func main() {
 	<-orchestrator.startSignal
 	log.Println("Start signal received! Beginning benchmark execution...")
 
-	// Generate infrastructure information based on registered node count
-	infraOutputs, err := GetInfraOutputs(len(orchestrator.nodes))
-	if err != nil {
-		msg := fmt.Sprintf("Warning: Failed to generate infrastructure outputs: %v", err)
-		log.Println(msg)
-		logCollector.Add(fmt.Sprintf("[INFRA_LOAD_WARNING] %s", msg))
-		log.Println("Continuing with default execution plans...")
-	} else {
-		logCollector.Add("[INFRA_LOAD_SUCCESS] Infrastructure outputs generated successfully")
-	}
-
 	// SYNC phase
 	logCollector.Add("[SYNC_START] Starting node synchronization")
 	if err := orchestrator.syncNodes(); err != nil {
@@ -199,32 +202,50 @@ func main() {
 	}
 	logCollector.Add("[SYNC_COMPLETE] All nodes synchronized successfully")
 
-	// Generate and distribute execution plans
+	// Create benchmark scenario based on command-line flags
+	scenarioConfig := ScenarioConfig{
+		ScenarioType:            *scenarioType,
+		Duration:                *duration,
+		DisconnectNodeCount:     *disconnectNodeCount,
+		DisconnectDuration:      *disconnectDuration,
+		FullDisconnect:          *fullDisconnect,
+		DisconnectAmountPerNode: *disconnectAmountPerNode,
+	}
+
+	scenario, err := CreateScenario(scenarioConfig)
+	if err != nil {
+		log.Fatalf("Failed to create scenario: %v", err)
+	}
+
+	log.Printf("Using benchmark scenario: %s (duration: %ds)", scenario.GetName(), scenario.GetDuration())
+	logCollector.Add(fmt.Sprintf("[SCENARIO_SELECTED] %s (duration: %ds)", scenario.GetName(), scenario.GetDuration()))
+
+	// Collect node IPs for scenario generation
+	var nodeIPs []string
+	nodeIPToID := make(map[string]string)
+	for nodeID, node := range orchestrator.nodes {
+		nodeIPs = append(nodeIPs, node.Ip)
+		nodeIPToID[node.Ip] = nodeID
+	}
+
+	// Generate execution plans using the scenario
 	log.Println("Generating execution plans for all nodes...")
 	logCollector.Add("[PLAN_GENERATION_START] Generating execution plans for all nodes")
 
-	for _, node := range orchestrator.nodes {
-		nodeID := node.NodeId
-		nodeIP := node.Ip
+	executionPlans := scenario.GenerateExecutionPlans(nodeIPs)
+	startTime := time.Now().Add(5 * time.Second).UnixMilli() // start 5 seconds from now
 
-		// Collect target IPs (other worker nodes) for this node's chaos plan
-		var targetIPs []string
-		if infraOutputs != nil {
-			for _, ip := range infraOutputs.WorkerPrivateIPs {
-				if ip != nodeIP {
-					targetIPs = append(targetIPs, ip)
-				}
-			}
-		}
+	// Distribute plans to nodes
+	for nodeIP, planStr := range executionPlans {
+		nodeID := nodeIPToID[nodeIP]
 
-		planStr, startTime := generateExecutionPlanForNode(nodeIP, targetIPs)
 		plan := &pb.ExecutionPlan{
-			NodeId:    node.NodeId,
+			NodeId:    nodeID,
 			Plan:      planStr,
 			StartTime: startTime,
 		}
 
-		msg := fmt.Sprintf("Sending plan to node %s at %s with %d target IPs", nodeID, nodeIP, len(targetIPs))
+		msg := fmt.Sprintf("Sending plan to node %s at %s (plan length: %d bytes)", nodeID, nodeIP, len(planStr))
 		log.Println(msg)
 		logCollector.Add(fmt.Sprintf("[PLAN_SEND] %s", msg))
 
@@ -235,19 +256,6 @@ func main() {
 			logCollector.Add(fmt.Sprintf("[PLAN_SEND_SUCCESS] Plan sent to %s: %v", nodeID, ack))
 		}
 		log.Printf("Plan sent to %s: %v (err: %v)", nodeID, ack, err)
-
-		// Optionally: collect logs after some time
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		logs, err := orchestrator.CollectLogs(ctx, &pb.LogRequest{NodeId: nodeID})
-		if err != nil {
-			msg := fmt.Sprintf("CollectLogs failed for %s: %v", nodeID, err)
-			log.Println(msg)
-			logCollector.Add(fmt.Sprintf("[LOG_COLLECT_ERROR] %s", msg))
-		} else {
-			log.Printf("Logs from %s: %s", nodeID, logs.Logs)
-			logCollector.Add(fmt.Sprintf("[LOG_COLLECT_SUCCESS] Logs from %s: %s", nodeID, logs.Logs))
-		}
 	}
 
 	logCollector.Add("[ORCHESTRATION_COMPLETE] All plans distributed successfully")

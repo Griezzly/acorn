@@ -24,7 +24,7 @@ deployment_order:
       retry_delay: 5  # seconds between retries
 
   - service: authservice
-    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
+    instances: 5  # Stateless - can be scaled (e.g., 2, 3, 4)
     wait_time: 60
     readiness_check:
       enabled: false
@@ -36,7 +36,7 @@ deployment_order:
       retry_delay: 5
 
   - service: acmeair
-    instances: 3  # Stateless - can be scaled (e.g., 2, 3, 4)
+    instances: 5  # Stateless - can be scaled (e.g., 2, 3, 4)
     wait_time: 60
     readiness_check:
       enabled: false

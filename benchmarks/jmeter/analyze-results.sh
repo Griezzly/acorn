@@ -38,7 +38,7 @@ echo ""
 # Response time statistics
 echo "Response Time Statistics (ms):"
 echo "------------------------------"
-grep 'httpSample' "$JTL_FILE" | sed 's/.*t="\([^"]*\)".*/\1/' | awk '{
+grep 'httpSample' "$JTL_FILE" | sed 's/.*httpSample t="\([^"]*\)".*/\1/' | awk '{
     sum+=$1
     if(NR==1){min=$1;max=$1}
     if($1<min){min=$1}
