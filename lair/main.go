@@ -4,16 +4,17 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	pb "acorn/grpc"
 	"acorn/pkg/logcollector"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const targetNodeCount = 5 // Set this to how many nodes you want to wait for
@@ -26,6 +27,7 @@ var (
 	disconnectDuration      = flag.Int64("disconnect-duration", 10, "Duration of each disconnect in seconds (disconnect scenario)")
 	fullDisconnect          = flag.Bool("full-disconnect", true, "Full disconnect vs partial (disconnect scenario)")
 	disconnectAmountPerNode = flag.Int("disconnect-amount", 1, "Number of disconnects per node (disconnect scenario)")
+	excludedNodeIPs         = flag.String("exclude-nodes", "", "Comma-separated list of node IPs to exclude from disconnection (e.g., '10.0.0.10,10.0.0.11')")
 )
 
 type orchestratorServer struct {
@@ -202,6 +204,19 @@ func main() {
 	}
 	logCollector.Add("[SYNC_COMPLETE] All nodes synchronized successfully")
 
+	// Parse excluded node IPs from comma-separated string
+	var excludedIPs []string
+	if *excludedNodeIPs != "" {
+		for _, ip := range strings.Split(*excludedNodeIPs, ",") {
+			trimmedIP := strings.TrimSpace(ip)
+			if trimmedIP != "" {
+				excludedIPs = append(excludedIPs, trimmedIP)
+			}
+		}
+		log.Printf("Excluded node IPs from disconnection: %v", excludedIPs)
+		logCollector.Add(fmt.Sprintf("[EXCLUDED_NODES] %v", excludedIPs))
+	}
+
 	// Create benchmark scenario based on command-line flags
 	scenarioConfig := ScenarioConfig{
 		ScenarioType:            *scenarioType,
@@ -210,6 +225,7 @@ func main() {
 		DisconnectDuration:      *disconnectDuration,
 		FullDisconnect:          *fullDisconnect,
 		DisconnectAmountPerNode: *disconnectAmountPerNode,
+		ExcludedNodeIPs:         excludedIPs,
 	}
 
 	scenario, err := CreateScenario(scenarioConfig)
@@ -233,6 +249,11 @@ func main() {
 	logCollector.Add("[PLAN_GENERATION_START] Generating execution plans for all nodes")
 
 	executionPlans := scenario.GenerateExecutionPlans(nodeIPs)
+	logCollector.Add(fmt.Sprintf("[PLAN_GENERATION_COMPLETE] Generated %d execution plans", len(executionPlans)))
+	// log the actual plans
+	for nodeIP, plan := range executionPlans {
+		logCollector.Add(fmt.Sprintf("[PLAN_FOR_NODE] Node IP: %s, Plan:\n%s", nodeIP, plan))
+	}
 	startTime := time.Now().Add(5 * time.Second).UnixMilli() // start 5 seconds from now
 
 	// Distribute plans to nodes
