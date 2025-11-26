@@ -283,12 +283,12 @@ for SLA_FILE_NAME in $SLA_FILES; do
     done
 done
 
-# Deploy instances in order
+# Deploy instances in round-robin order
 DEPLOYMENT_ORDER=$(yq e '.deployment_order' "$CONFIG_FILE" -o=json)
 NUM_SERVICES=$(echo "$DEPLOYMENT_ORDER" | jq 'length')
 
 echo ""
-log_step "Deploying service instances..."
+log_step "Deploying service instances in round-robin pattern..."
 
 # Debug: Show all collected service IDs
 log_info "Available services:"
@@ -296,65 +296,94 @@ for svc in "${!SERVICE_IDS[@]}"; do
     log_info "  - $svc: ${SERVICE_IDS[$svc]}"
 done
 
+# Find the maximum number of instances across all services
+MAX_INSTANCES=0
 for i in $(seq 0 $((NUM_SERVICES - 1))); do
-    SVC_NAME=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].service")
     INSTANCES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].instances")
-    WAIT_TIME=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].wait_time")
-
-    SVC_ID="${SERVICE_IDS[$SVC_NAME]}"
-
-    if [ -z "$SVC_ID" ] || [ "$SVC_ID" = "null" ]; then
-        log_error "Service ID not found for: $SVC_NAME"
-        log_error "Available services: ${!SERVICE_IDS[@]}"
-        exit 1
+    if [ "$INSTANCES" -gt "$MAX_INSTANCES" ]; then
+        MAX_INSTANCES=$INSTANCES
     fi
+done
 
-    log_info "Deploying $SVC_NAME (${INSTANCES} instance(s))..."
+log_info "Maximum instances: $MAX_INSTANCES"
+echo ""
 
-    for j in $(seq 1 $INSTANCES); do
+# Deploy instances in waves (instance 1 of all services, then instance 2, etc.)
+for instance_num in $(seq 1 $MAX_INSTANCES); do
+    log_info "=== Wave $instance_num ==="
+
+    for i in $(seq 0 $((NUM_SERVICES - 1))); do
+        SVC_NAME=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].service")
+        INSTANCES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].instances")
+        WAIT_TIME=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].wait_time")
+
+        # Skip if this service doesn't need this many instances
+        if [ "$instance_num" -gt "$INSTANCES" ]; then
+            continue
+        fi
+
+        SVC_ID="${SERVICE_IDS[$SVC_NAME]}"
+
+        if [ -z "$SVC_ID" ] || [ "$SVC_ID" = "null" ]; then
+            log_error "Service ID not found for: $SVC_NAME"
+            log_error "Available services: ${!SERVICE_IDS[@]}"
+            exit 1
+        fi
+
+        log_info "Deploying $SVC_NAME instance $instance_num/$INSTANCES..."
+
         INSTANCE_RESPONSE=$(curl -s -X POST "${BASE_URL}/api/service/${SVC_ID}/instance" \
             -H "Authorization: Bearer $TOKEN")
 
         if echo "$INSTANCE_RESPONSE" | jq -e . >/dev/null 2>&1; then
-            log_info "  ✓ Instance $j created"
+            log_info "  ✓ Instance created"
         else
-            log_error "  ✗ Failed to create instance $j"
+            log_error "  ✗ Failed to create instance"
             log_error "  Response: $INSTANCE_RESPONSE"
+        fi
+
+        # For first instance of each service: use full wait_time or readiness check
+        # For subsequent instances: only wait 3 seconds
+        if [ "$instance_num" -eq 1 ]; then
+            READINESS_ENABLED=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.enabled // false")
+
+            if [ "$READINESS_ENABLED" = "true" ]; then
+                CHECK_TYPE=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.type")
+                TIMEOUT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.timeout")
+                RETRIES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.retries")
+                RETRY_DELAY=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.retry_delay")
+
+                if [ "$CHECK_TYPE" = "tcp" ]; then
+                    HOST=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.host")
+                    PORT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.port")
+
+                    if ! check_readiness "$SVC_NAME" "tcp" "$TIMEOUT" "$RETRIES" "$RETRY_DELAY" "$HOST" "$PORT"; then
+                        log_error "Deployment failed: $SVC_NAME not ready"
+                        exit 1
+                    fi
+
+                elif [ "$CHECK_TYPE" = "http" ]; then
+                    ENDPOINT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.endpoint")
+                    EXPECTED_STATUSES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.expected_status[]" | tr '\n' ' ')
+
+                    if ! check_readiness "$SVC_NAME" "http" "$TIMEOUT" "$RETRIES" "$RETRY_DELAY" "$ENDPOINT" "$EXPECTED_STATUSES"; then
+                        log_error "Deployment failed: $SVC_NAME not ready"
+                        exit 1
+                    fi
+                fi
+            else
+                # Fall back to wait time if no readiness check configured
+                log_info "  Waiting ${WAIT_TIME}s for $SVC_NAME to stabilize..."
+                sleep "$WAIT_TIME"
+            fi
+        else
+            # Subsequent instances: only wait 3 seconds
+            log_info "  Waiting 3s for instance to stabilize..."
+            sleep 3
         fi
     done
 
-    # Readiness check
-    READINESS_ENABLED=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.enabled // false")
-
-    if [ "$READINESS_ENABLED" = "true" ]; then
-        CHECK_TYPE=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.type")
-        TIMEOUT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.timeout")
-        RETRIES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.retries")
-        RETRY_DELAY=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.retry_delay")
-
-        if [ "$CHECK_TYPE" = "tcp" ]; then
-            HOST=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.host")
-            PORT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.port")
-
-            if ! check_readiness "$SVC_NAME" "tcp" "$TIMEOUT" "$RETRIES" "$RETRY_DELAY" "$HOST" "$PORT"; then
-                log_error "Deployment failed: $SVC_NAME not ready"
-                exit 1
-            fi
-
-        elif [ "$CHECK_TYPE" = "http" ]; then
-            ENDPOINT=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.endpoint")
-            EXPECTED_STATUSES=$(echo "$DEPLOYMENT_ORDER" | jq -r ".[$i].readiness_check.expected_status[]" | tr '\n' ' ')
-
-            if ! check_readiness "$SVC_NAME" "http" "$TIMEOUT" "$RETRIES" "$RETRY_DELAY" "$ENDPOINT" "$EXPECTED_STATUSES"; then
-                log_error "Deployment failed: $SVC_NAME not ready"
-                exit 1
-            fi
-        fi
-    elif [ "$i" -lt $((NUM_SERVICES - 1)) ]; then
-        # Fall back to wait time if no readiness check configured
-        log_info "  Waiting ${WAIT_TIME}s for $SVC_NAME to stabilize..."
-        sleep "$WAIT_TIME"
-    fi
+    echo ""
 done
 
 # Post-deployment tasks
