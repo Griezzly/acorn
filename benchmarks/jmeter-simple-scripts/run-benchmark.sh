@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# JMeter Continuous Load Runner (Duration-based)
-# Uses pre-built duration Docker image from registry
+# JMeter Benchmark Runner for AcmeAir/Acorn
+# Uses pre-built Docker image from registry
 #
 
 set -e
@@ -10,16 +10,16 @@ set -e
 TARGET_HOST="${TARGET_HOST:-localhost}"
 TARGET_PORT="${TARGET_PORT:-8080}"
 NUM_THREADS="${NUM_THREADS:-10}"
-DURATION="${DURATION:-3600}"  # Duration in seconds (default: 1 hour)
+LOOP_COUNT="${LOOP_COUNT:-100}"
 CONTEXT_ROOT="${CONTEXT_ROOT:-}"
-IMAGE_NAME="${IMAGE_NAME:-schubbcasten/acmeair-jmeter:duration-v0.0.1}"
+IMAGE_NAME="${IMAGE_NAME:-acmeair-jmeter-resilient}"
 
 echo "================================================"
-echo "JMeter Continuous Load Generator"
+echo "JMeter Benchmark Runner"
 echo "================================================"
 echo "Target: http://${TARGET_HOST}:${TARGET_PORT}${CONTEXT_ROOT}"
 echo "Threads: ${NUM_THREADS}"
-echo "Duration: ${DURATION} seconds ($(echo "scale=2; ${DURATION}/60" | bc) minutes)"
+echo "Loop Count: ${LOOP_COUNT}"
 echo "Image: ${IMAGE_NAME}"
 echo "================================================"
 echo ""
@@ -27,25 +27,18 @@ echo ""
 # Create results directory
 mkdir -p results
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-RESULT_DIR="results/continuous-${TIMESTAMP}"
+RESULT_DIR="results/benchmark-${TIMESTAMP}"
 mkdir -p "${RESULT_DIR}"
 
-echo "Starting continuous load test..."
+echo "Starting JMeter benchmark..."
 echo "Results will be saved to: ${RESULT_DIR}/"
-echo "Press Ctrl+C to stop early (JMeter will finish current transactions)"
 echo ""
 
-# Trap Ctrl+C to show results location
-trap 'echo ""; echo "Stopping..."; echo "Results saved in: ${RESULT_DIR}/"; exit 0' INT TERM
-
-# Run JMeter with duration parameter
+# Run the benchmark
 docker run --rm \
-    --name jmeter-continuous-${TIMESTAMP} \
     -e NUM_THREAD=${NUM_THREADS} \
-    -e DURATION=${DURATION} \
+    -e LOOP_COUNT=${LOOP_COUNT} \
     -e USE_PURE_IDS=true \
-    -e LOG_FILE=continuous-load.log \
-    -e JTL_FILE=continuous-load.jtl \
     -e APP_PORT_9080_TCP_ADDR=${TARGET_HOST} \
     -e APP_PORT_9080_TCP_PORT=${TARGET_PORT} \
     -e CONTEXT_ROOT=${CONTEXT_ROOT} \
@@ -54,11 +47,11 @@ docker run --rm \
 
 echo ""
 echo "================================================"
-echo "Continuous load test completed!"
+echo "Benchmark completed!"
 echo "Results saved in: ${RESULT_DIR}/"
-echo "  - continuous-load.log (JMeter log)"
-echo "  - continuous-load.jtl (Test results)"
+echo "  - AcmeAir1.log (JMeter log)"
+echo "  - AcmeAir1.jtl (Test results)"
 echo ""
 echo "Analyze results with:"
-echo "  ./analyze-results.sh ${RESULT_DIR}/continuous-load.jtl"
+echo "  ./analyze-results.sh ${RESULT_DIR}/AcmeAir1.jtl"
 echo "================================================"
