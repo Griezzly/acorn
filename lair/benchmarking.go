@@ -28,6 +28,7 @@ type DisconnectBenchmarkScenario struct {
 	DisconnectDuration      int64 // in seconds
 	FullDisconnect          bool
 	DisconnectAmountPerNode int
+	ExcludedNodeIPs         []string
 }
 
 // GenerateExecutionPlans creates execution plans for each node based on the disconnect benchmark scenario.
@@ -45,18 +46,35 @@ func (d *DisconnectBenchmarkScenario) GenerateExecutionPlans(nodeIPs []string) m
 		plans[ip] = ""
 	}
 
+	// Filter out excluded nodes from being selected for disconnection
+	eligibleNodes := make([]string, 0, len(nodeIPs))
+	for _, ip := range nodeIPs {
+		if !d.isNodeExcluded(ip) {
+			eligibleNodes = append(eligibleNodes, ip)
+		}
+	}
+
+	log.Printf("Total nodes: %d, Eligible for disconnection: %d, Excluded: %d",
+		len(nodeIPs), len(eligibleNodes), len(nodeIPs)-len(eligibleNodes))
+
+	// If no eligible nodes, return empty plans
+	if len(eligibleNodes) == 0 {
+		log.Printf("No eligible nodes for disconnection (all excluded)")
+		return plans
+	}
+
 	// Determine how many nodes will disconnect
 	disconnectingCount := d.DisconnectingNodeAmount
-	if disconnectingCount > len(nodeIPs) {
-		disconnectingCount = len(nodeIPs)
+	if disconnectingCount > len(eligibleNodes) {
+		disconnectingCount = len(eligibleNodes)
 	}
 	if disconnectingCount <= 0 {
 		return plans
 	}
 
-	// Randomly select which nodes will disconnect
-	shuffledNodes := make([]string, len(nodeIPs))
-	copy(shuffledNodes, nodeIPs)
+	// Randomly select which nodes will disconnect (from eligible nodes only)
+	shuffledNodes := make([]string, len(eligibleNodes))
+	copy(shuffledNodes, eligibleNodes)
 	rand.Shuffle(len(shuffledNodes), func(i, j int) {
 		shuffledNodes[i], shuffledNodes[j] = shuffledNodes[j], shuffledNodes[i]
 	})
@@ -146,6 +164,16 @@ func (d *DisconnectBenchmarkScenario) GenerateExecutionPlans(nodeIPs []string) m
 	return plans
 }
 
+// isNodeExcluded checks if a node IP is in the excluded list
+func (d *DisconnectBenchmarkScenario) isNodeExcluded(nodeIP string) bool {
+	for _, excludedIP := range d.ExcludedNodeIPs {
+		if nodeIP == excludedIP {
+			return true
+		}
+	}
+	return false
+}
+
 // GetDuration returns the total duration of the benchmark in seconds
 func (d *DisconnectBenchmarkScenario) GetDuration() int64 {
 	return d.Duration
@@ -170,6 +198,7 @@ type ScenarioConfig struct {
 	DisconnectDuration      int64
 	FullDisconnect          bool
 	DisconnectAmountPerNode int
+	ExcludedNodeIPs         []string
 }
 
 // CreateScenario creates a benchmark scenario based on the configuration
@@ -182,6 +211,7 @@ func CreateScenario(config ScenarioConfig) (BenchmarkScenario, error) {
 			DisconnectDuration:      config.DisconnectDuration,
 			FullDisconnect:          config.FullDisconnect,
 			DisconnectAmountPerNode: config.DisconnectAmountPerNode,
+			ExcludedNodeIPs:         config.ExcludedNodeIPs,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown scenario type: %s", config.ScenarioType)
