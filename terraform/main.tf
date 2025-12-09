@@ -36,8 +36,7 @@ resource "hcloud_firewall" "benchmark_firewall" {
     source_ips = [
       "10.18.0.64/26",
       "10.30.0.0/16",
-      "143.177.17.185/32",
-      "2001:4860:7:161f::fa/128"
+      "82.174.94.159/32"
     ]
   }
 
@@ -68,7 +67,7 @@ resource "hcloud_firewall" "benchmark_firewall" {
     protocol  = "udp"
     port      = "51820"
     source_ips = [
-      "143.177.17.185/32"
+      "82.174.94.159/32"
     ]
   }
 }
