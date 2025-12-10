@@ -54,8 +54,20 @@ NUM_THREADS=5 DURATION=7200 TARGET_HOST=localhost ./run-background-load.sh start
 ### 4. `analyze-results.sh` - Results Analyzer
 Analyzes JMeter .jtl result files.
 
+Example Usage:
+
 ```bash
-./analyze-results.sh results/benchmark-20251119-120000/AcmeAir1.jtl
+# Analyze full file (no filtering)
+./analyze-jmeter-results.sh results.jtl
+
+# Analyze only entries between two timestamps
+./analyze-jmeter-results.sh results.jtl 1765301556275495512 1765301586275495512
+
+# Analyze entries after a specific timestamp (no end time)
+./analyze-jmeter-results.sh results.jtl 1765301556275495512
+
+# Analyze entries before a specific timestamp (no start time)
+./analyze-jmeter-results.sh results.jtl "" 1765301586275495512
 ```
 
 ## Environment Variables

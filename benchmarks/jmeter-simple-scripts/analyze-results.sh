@@ -5,7 +5,10 @@
 #* This script analyzes JTL files from resilient JMeter runs and extracts
 #* recovery metrics including downtime, recovery times, and outage counts.
 #*
-#* Usage: ./analyze-jmeter-results.sh <jtl-file>
+#* Usage: ./analyze-jmeter-results.sh <jtl-file> [start-timestamp] [end-timestamp]
+#*
+#* Timestamps should be in nanoseconds (e.g., 1765301556275495512)
+#* If provided, only entries within the timestamp range will be analyzed
 #*******************************************************************************
 
 set -e
@@ -20,26 +23,71 @@ NC='\033[0m' # No Color
 # Check for input file
 if [ -z "$1" ]; then
     echo -e "${RED}Error: No JTL file specified${NC}"
-    echo "Usage: $0 <jtl-file>"
+    echo "Usage: $0 <jtl-file> [start-timestamp-ns] [end-timestamp-ns]"
     echo ""
     echo "Example:"
     echo "  $0 results.jtl"
     echo "  $0 jmeter-results/AcmeAir1.jtl"
+    echo "  $0 results.jtl 1765301556275495512 1765301586275495512"
     exit 1
 fi
 
 JTL_FILE="$1"
+START_TIMESTAMP_NS="$2"
+END_TIMESTAMP_NS="$3"
+
+# Convert nanosecond timestamps to milliseconds (JMeter format)
+START_TIMESTAMP_MS=""
+END_TIMESTAMP_MS=""
+if [ ! -z "$START_TIMESTAMP_NS" ]; then
+    START_TIMESTAMP_MS=$((START_TIMESTAMP_NS / 1000000))
+fi
+if [ ! -z "$END_TIMESTAMP_NS" ]; then
+    END_TIMESTAMP_MS=$((END_TIMESTAMP_NS / 1000000))
+fi
 
 if [ ! -f "$JTL_FILE" ]; then
     echo -e "${RED}Error: File not found: $JTL_FILE${NC}"
     exit 1
 fi
 
+# Create filtered file if timestamps provided
+FILTERED_FILE=""
+if [ ! -z "$START_TIMESTAMP_MS" ] || [ ! -z "$END_TIMESTAMP_MS" ]; then
+    FILTERED_FILE=$(mktemp)
+
+    # Extract header
+    head -1 "$JTL_FILE" > "$FILTERED_FILE"
+
+    # Filter data rows based on timestamps
+    awk -F',' -v start="$START_TIMESTAMP_MS" -v end="$END_TIMESTAMP_MS" '
+        NR>1 {
+            timestamp=$1
+            include=1
+            if (start != "" && timestamp < start) include=0
+            if (end != "" && timestamp > end) include=0
+            if (include) print $0
+        }
+    ' "$JTL_FILE" >> "$FILTERED_FILE"
+
+    # Use filtered file for analysis
+    JTL_FILE="$FILTERED_FILE"
+fi
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Recovery Metrics Analysis Report${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "File: $JTL_FILE"
+echo "File: $1"
+if [ ! -z "$START_TIMESTAMP_MS" ] || [ ! -z "$END_TIMESTAMP_MS" ]; then
+    echo "Timestamp Filter: ENABLED"
+    if [ ! -z "$START_TIMESTAMP_MS" ]; then
+        echo "  Start: $START_TIMESTAMP_NS (ns) = $START_TIMESTAMP_MS (ms) = $(date -r $((START_TIMESTAMP_MS/1000)) '+%Y-%m-%d %H:%M:%S')"
+    fi
+    if [ ! -z "$END_TIMESTAMP_MS" ]; then
+        echo "  End:   $END_TIMESTAMP_NS (ns) = $END_TIMESTAMP_MS (ms) = $(date -r $((END_TIMESTAMP_MS/1000)) '+%Y-%m-%d %H:%M:%S')"
+    fi
+fi
 echo "Generated: $(date)"
 echo ""
 
@@ -311,3 +359,8 @@ echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}End of Report${NC}"
 echo -e "${GREEN}========================================${NC}"
+
+# Cleanup temporary filtered file
+if [ ! -z "$FILTERED_FILE" ]; then
+    rm -f "$FILTERED_FILE"
+fi

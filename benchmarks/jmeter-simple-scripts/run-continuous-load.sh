@@ -12,7 +12,7 @@ TARGET_PORT="${TARGET_PORT:-8080}"
 NUM_THREADS="${NUM_THREADS:-10}"
 DURATION="${DURATION:-3600}"  # Duration in seconds (default: 1 hour)
 CONTEXT_ROOT="${CONTEXT_ROOT:-}"
-IMAGE_NAME="${IMAGE_NAME:-acmeair-jmeter-resilient:v1.1.0-recovery-metrics}"
+IMAGE_NAME="${IMAGE_NAME:-schubbcasten/acmeair-jmeter-resilient:v1.1.2}"
 
 echo "================================================"
 echo "JMeter Continuous Load Generator"
