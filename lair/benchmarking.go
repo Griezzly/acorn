@@ -69,6 +69,12 @@ func (d *DisconnectBenchmarkScenario) GenerateExecutionPlans(nodeIPs []string) m
 		disconnectingCount = len(eligibleNodes)
 	}
 	if disconnectingCount <= 0 {
+		// Even if no nodes are disconnecting, add end step to all nodes
+		durationMs := d.Duration * 1000
+		for nodeIP := range plans {
+			endTimestamp := durationMs
+			plans[nodeIP] = fmt.Sprintf("%d:end:benchmark_complete", endTimestamp)
+		}
 		return plans
 	}
 
@@ -158,7 +164,19 @@ func (d *DisconnectBenchmarkScenario) GenerateExecutionPlans(nodeIPs []string) m
 			}
 		}
 
+		// Add explicit end step at the benchmark duration
+		endTimestamp := durationMs
+		steps = append(steps, fmt.Sprintf("%d:end:benchmark_complete", endTimestamp))
+
 		plans[nodeIP] = strings.Join(steps, "\n")
+	}
+
+	// For nodes that don't disconnect, still add an end step
+	for nodeIP, plan := range plans {
+		if plan == "" {
+			endTimestamp := durationMs
+			plans[nodeIP] = fmt.Sprintf("%d:end:benchmark_complete", endTimestamp)
+		}
 	}
 
 	return plans

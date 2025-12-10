@@ -221,6 +221,13 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 				load, _ := strconv.ParseFloat(step.Args[0], 64)
 				go pe.LoadCPU(runtime.NumCPU(), load, 5*time.Second)
 			}
+		case "end":
+			// Log explicit benchmark termination
+			message := "benchmark_complete"
+			if len(step.Args) >= 1 {
+				message = step.Args[0]
+			}
+			pe.logCollector.Add(fmt.Sprintf("[BENCHMARK_TERMINATION] %s timestamp=%d", message, step.Timestamp))
 		}
 
 		stepEndTime := time.Now()

@@ -61,10 +61,15 @@ func TestGenerateExecutionPlans_ZeroDisconnectingNodes(t *testing.T) {
 	nodeIPs := []string{"10.0.0.10", "10.0.0.11", "10.0.0.12"}
 	plans := scenario.GenerateExecutionPlans(nodeIPs)
 
-	// All plans should be empty since no nodes are disconnecting
+	// All plans should only have the "end" step since no nodes are disconnecting
 	for _, ip := range nodeIPs {
-		if plans[ip] != "" {
-			t.Errorf("expected empty plan for %s when DisconnectingNodeAmount=0, got: %s", ip, plans[ip])
+		steps := parseSteps(plans[ip])
+		// Should have exactly one step: the "end" step
+		if len(steps) != 1 {
+			t.Errorf("expected exactly 1 step (end) for %s when DisconnectingNodeAmount=0, got %d steps", ip, len(steps))
+		}
+		if len(steps) > 0 && steps[0].action != "end" {
+			t.Errorf("expected only 'end' action for %s when DisconnectingNodeAmount=0, got: %s", ip, steps[0].action)
 		}
 	}
 }
@@ -91,17 +96,23 @@ func TestGenerateExecutionPlans_SingleDisconnectPerNode(t *testing.T) {
 			nodeIPs := []string{"10.0.0.10", "10.0.0.11", "10.0.0.12"}
 			plans := scenario.GenerateExecutionPlans(nodeIPs)
 
-			// Find the node with a non-empty plan
+			// Find the node with block/unblock commands (the disconnecting node)
 			var disconnectingNode string
 			for ip, plan := range plans {
-				if plan != "" {
-					disconnectingNode = ip
+				steps := parseSteps(plan)
+				for _, step := range steps {
+					if step.action == "block" || step.action == "unblock" {
+						disconnectingNode = ip
+						break
+					}
+				}
+				if disconnectingNode != "" {
 					break
 				}
 			}
 
 			if disconnectingNode == "" {
-				t.Fatal("expected at least one node to have a plan")
+				t.Fatal("expected at least one node to have block/unblock commands")
 			}
 
 			steps := parseSteps(plans[disconnectingNode])
@@ -140,17 +151,23 @@ func TestGenerateExecutionPlans_MultipleDisconnectsPerNode(t *testing.T) {
 	nodeIPs := []string{"10.0.0.10", "10.0.0.11", "10.0.0.12"}
 	plans := scenario.GenerateExecutionPlans(nodeIPs)
 
-	// Find the disconnecting node
+	// Find the disconnecting node (one with block commands)
 	var disconnectingNode string
 	for ip, plan := range plans {
-		if plan != "" {
-			disconnectingNode = ip
+		steps := parseSteps(plan)
+		for _, step := range steps {
+			if step.action == "block" {
+				disconnectingNode = ip
+				break
+			}
+		}
+		if disconnectingNode != "" {
 			break
 		}
 	}
 
 	if disconnectingNode == "" {
-		t.Fatal("expected at least one node to have a plan")
+		t.Fatal("expected at least one node to have block commands")
 	}
 
 	steps := parseSteps(plans[disconnectingNode])
@@ -180,17 +197,23 @@ func TestGenerateExecutionPlans_DisconnectsCappedByDuration(t *testing.T) {
 	nodeIPs := []string{"10.0.0.10", "10.0.0.11"}
 	plans := scenario.GenerateExecutionPlans(nodeIPs)
 
-	// Find the disconnecting node
+	// Find the disconnecting node (one with block commands)
 	var disconnectingNode string
 	for ip, plan := range plans {
-		if plan != "" {
-			disconnectingNode = ip
+		steps := parseSteps(plan)
+		for _, step := range steps {
+			if step.action == "block" {
+				disconnectingNode = ip
+				break
+			}
+		}
+		if disconnectingNode != "" {
 			break
 		}
 	}
 
 	if disconnectingNode == "" {
-		t.Fatal("expected at least one node to have a plan")
+		t.Fatal("expected at least one node to have block commands")
 	}
 
 	steps := parseSteps(plans[disconnectingNode])
@@ -220,17 +243,23 @@ func TestGenerateExecutionPlans_FullDisconnect(t *testing.T) {
 	nodeIPs := []string{"10.0.0.10", "10.0.0.11", "10.0.0.12", "10.0.0.13"}
 	plans := scenario.GenerateExecutionPlans(nodeIPs)
 
-	// Find the disconnecting node
+	// Find the disconnecting node (one with block commands)
 	var disconnectingNode string
 	for ip, plan := range plans {
-		if plan != "" {
-			disconnectingNode = ip
+		steps := parseSteps(plan)
+		for _, step := range steps {
+			if step.action == "block" {
+				disconnectingNode = ip
+				break
+			}
+		}
+		if disconnectingNode != "" {
 			break
 		}
 	}
 
 	if disconnectingNode == "" {
-		t.Fatal("expected at least one node to have a plan")
+		t.Fatal("expected at least one node to have block commands")
 	}
 
 	steps := parseSteps(plans[disconnectingNode])
@@ -271,11 +300,17 @@ func TestGenerateExecutionPlans_PartialDisconnect(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		plans := scenario.GenerateExecutionPlans(nodeIPs)
 
-		// Find the disconnecting node
+		// Find the disconnecting node (one with block commands)
 		var disconnectingNode string
 		for ip, plan := range plans {
-			if plan != "" {
-				disconnectingNode = ip
+			steps := parseSteps(plan)
+			for _, step := range steps {
+				if step.action == "block" {
+					disconnectingNode = ip
+					break
+				}
+			}
+			if disconnectingNode != "" {
 				break
 			}
 		}
