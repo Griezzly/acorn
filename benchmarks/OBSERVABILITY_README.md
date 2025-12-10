@@ -142,7 +142,7 @@ No manual configuration needed. Datasources appear automatically when Grafana st
 ```bash
 curl -X POST \
   -H "Content-Type: application/json" \
-  -d @grafana-dashboard.json \
+  -d @acorn-dashboard.json \
   http://admin:admin@localhost:3000/api/dashboards/db
 ```
 

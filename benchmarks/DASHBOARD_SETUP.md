@@ -81,7 +81,7 @@ This sets up:
 # From project root
 curl -X POST \
   -H "Content-Type: application/json" \
-  -d @benchmarks/grafana-dashboard.json \
+  -d @benchmarks/acorn-dashboard.json \
   http://admin:admin@localhost:3000/api/dashboards/db
 ```
 
