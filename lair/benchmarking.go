@@ -205,10 +205,164 @@ func (d *DisconnectBenchmarkScenario) GetName() string {
 	return "Network Partition (Partial Disconnect)"
 }
 
+// NodeFailureBenchmarkScenario defines the configuration for benchmarking node failure scenarios.
+// It specifies the total duration, number of nodes to fail, and the duration of failure in seconds.
+// This simulates complete node failures by stopping and restarting NodeEngine.
+type NodeFailureBenchmarkScenario struct {
+	Duration             int64 // in seconds
+	FailingNodeAmount    int
+	FailureDuration      int64 // in seconds
+	FailureAmountPerNode int
+	ExcludedNodeIPs      []string
+}
+
+// GenerateExecutionPlans creates execution plans for each node based on the node failure benchmark scenario.
+// nodeIPs: list of IPs of the nodes participating in the benchmark
+// Returns a map of nodeIP -> execution plan string
+func (n *NodeFailureBenchmarkScenario) GenerateExecutionPlans(nodeIPs []string) map[string]string {
+	plans := make(map[string]string)
+
+	if len(nodeIPs) == 0 {
+		return plans
+	}
+
+	// Initialize empty plans for all nodes
+	for _, ip := range nodeIPs {
+		plans[ip] = ""
+	}
+
+	// Filter out excluded nodes from being selected for failure
+	eligibleNodes := make([]string, 0, len(nodeIPs))
+	for _, ip := range nodeIPs {
+		if !n.isNodeExcluded(ip) {
+			eligibleNodes = append(eligibleNodes, ip)
+		}
+	}
+
+	log.Printf("Total nodes: %d, Eligible for failure: %d, Excluded: %d",
+		len(nodeIPs), len(eligibleNodes), len(nodeIPs)-len(eligibleNodes))
+
+	// If no eligible nodes, return empty plans
+	if len(eligibleNodes) == 0 {
+		log.Printf("No eligible nodes for failure (all excluded)")
+		return plans
+	}
+
+	// Determine how many nodes will fail
+	failingCount := n.FailingNodeAmount
+	if failingCount > len(eligibleNodes) {
+		failingCount = len(eligibleNodes)
+	}
+	if failingCount <= 0 {
+		// Even if no nodes are failing, add end step to all nodes
+		durationMs := n.Duration * 1000
+		for nodeIP := range plans {
+			endTimestamp := durationMs
+			plans[nodeIP] = fmt.Sprintf("%d:end:benchmark_complete", endTimestamp)
+		}
+		return plans
+	}
+
+	// Randomly select which nodes will fail (from eligible nodes only)
+	shuffledNodes := make([]string, len(eligibleNodes))
+	copy(shuffledNodes, eligibleNodes)
+	rand.Shuffle(len(shuffledNodes), func(i, j int) {
+		shuffledNodes[i], shuffledNodes[j] = shuffledNodes[j], shuffledNodes[i]
+	})
+	failingNodes := shuffledNodes[:failingCount]
+
+	// Calculate how many times each node will fail
+	failuresPerNode := n.FailureAmountPerNode
+	if failuresPerNode <= 1 {
+		failuresPerNode = 1
+	}
+
+	// Cap failures at duration/failureDuration to ensure all failures fit
+	if n.FailureDuration > 0 {
+		maxFailures := int(n.Duration / n.FailureDuration)
+		if maxFailures < 1 {
+			maxFailures = 1
+		}
+		if failuresPerNode > maxFailures {
+			failuresPerNode = maxFailures
+		}
+	}
+
+	durationMs := n.Duration * 1000
+	failureDurationMs := n.FailureDuration * 1000
+
+	// Generate plan for each failing node
+	for _, nodeIP := range failingNodes {
+		var steps []string
+
+		// Generate random failure events for this node
+		for i := 0; i < failuresPerNode; i++ {
+			// Calculate the time window for this failure event
+			// Ensure failures don't overlap and fit within duration
+			windowSize := durationMs / int64(failuresPerNode)
+			windowStart := int64(i) * windowSize
+			windowEnd := windowStart + windowSize - failureDurationMs
+
+			if windowEnd <= windowStart {
+				windowEnd = windowStart + 1000 // At least 1 second window
+			}
+
+			// Random start time within the window
+			failureStart := windowStart + rand.Int63n(windowEnd-windowStart+1)
+			recoveryTime := failureStart + failureDurationMs
+
+			// Ensure recovery happens before benchmark ends
+			if recoveryTime > durationMs {
+				recoveryTime = durationMs
+			}
+
+			// Generate node-stop and node-start steps
+			steps = append(steps, fmt.Sprintf("%d:node-stop:", failureStart))
+			steps = append(steps, fmt.Sprintf("%d:node-start:", recoveryTime))
+		}
+
+		// Add explicit end step at the benchmark duration
+		endTimestamp := durationMs
+		steps = append(steps, fmt.Sprintf("%d:end:benchmark_complete", endTimestamp))
+
+		plans[nodeIP] = strings.Join(steps, "\n")
+	}
+
+	// For nodes that don't fail, still add an end step
+	for nodeIP, plan := range plans {
+		if plan == "" {
+			endTimestamp := durationMs
+			plans[nodeIP] = fmt.Sprintf("%d:end:benchmark_complete", endTimestamp)
+		}
+	}
+
+	return plans
+}
+
+// isNodeExcluded checks if a node IP is in the excluded list
+func (n *NodeFailureBenchmarkScenario) isNodeExcluded(nodeIP string) bool {
+	for _, excludedIP := range n.ExcludedNodeIPs {
+		if nodeIP == excludedIP {
+			return true
+		}
+	}
+	return false
+}
+
+// GetDuration returns the total duration of the benchmark in seconds
+func (n *NodeFailureBenchmarkScenario) GetDuration() int64 {
+	return n.Duration
+}
+
+// GetName returns the human-readable name of the scenario
+func (n *NodeFailureBenchmarkScenario) GetName() string {
+	return "Node Failure (NodeEngine Stop/Start)"
+}
+
 // ScenarioConfig holds configuration for creating benchmark scenarios
 type ScenarioConfig struct {
 	// Common settings
-	ScenarioType string // "disconnect", "resource", "mixed", etc.
+	ScenarioType string // "disconnect", "node-failure", "resource", "mixed", etc.
 	Duration     int64  // in seconds
 
 	// Disconnect scenario settings
@@ -217,6 +371,11 @@ type ScenarioConfig struct {
 	FullDisconnect          bool
 	DisconnectAmountPerNode int
 	ExcludedNodeIPs         []string
+
+	// Node failure scenario settings
+	FailureNodeCount     int
+	FailureDuration      int64
+	FailureAmountPerNode int
 }
 
 // CreateScenario creates a benchmark scenario based on the configuration
@@ -230,6 +389,14 @@ func CreateScenario(config ScenarioConfig) (BenchmarkScenario, error) {
 			FullDisconnect:          config.FullDisconnect,
 			DisconnectAmountPerNode: config.DisconnectAmountPerNode,
 			ExcludedNodeIPs:         config.ExcludedNodeIPs,
+		}, nil
+	case "node-failure":
+		return &NodeFailureBenchmarkScenario{
+			Duration:             config.Duration,
+			FailingNodeAmount:    config.FailureNodeCount,
+			FailureDuration:      config.FailureDuration,
+			FailureAmountPerNode: config.FailureAmountPerNode,
+			ExcludedNodeIPs:      config.ExcludedNodeIPs,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown scenario type: %s", config.ScenarioType)

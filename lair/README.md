@@ -83,6 +83,7 @@ Simulates network partitions and node disconnections using iptables rules.
 - `--disconnect-amount`: Number of times each node disconnects (default: 1)
 - `--full-disconnect`: Whether to disconnect from ALL nodes (true) or a random subset (false) (default: true)
 - `--duration`: Total benchmark duration in seconds (default: 60)
+- `--exclude-nodes`: Comma-separated list of node IPs to exclude from disconnection (e.g., '10.0.0.10,10.0.0.11')
 
 **Behavior:**
 - Randomly selects N nodes to disconnect (where N = `disconnect-nodes`)
@@ -99,19 +100,61 @@ Simulates network partitions and node disconnections using iptables rules.
 5000:block:10.0.0.12
 15000:unblock:10.0.0.11
 15000:unblock:10.0.0.12
+60000:end:benchmark_complete
 ```
+
+#### 2. Node Failure Scenario (`--scenario=node-failure`)
+
+Simulates complete node failures by stopping and restarting the NodeEngine daemon, causing all containers and services on the node to become unavailable.
+
+**Parameters:**
+- `--failure-nodes`: Number of nodes that will fail (default: 1)
+- `--failure-duration`: Duration of each failure in seconds (default: 10)
+- `--failure-amount`: Number of times each node fails (default: 1)
+- `--duration`: Total benchmark duration in seconds (default: 60)
+- `--exclude-nodes`: Comma-separated list of node IPs to exclude from failures (e.g., '10.0.0.10,10.0.0.11')
+
+**Behavior:**
+- Randomly selects N nodes to fail (where N = `failure-nodes`)
+- Each selected node generates random failure events within the benchmark duration
+- Failure events are distributed across time windows to avoid overlap
+- **Node Stop**: Executes `NodeEngine stop` - completely shuts down the Oakestra node engine
+- **Node Start**: Executes `NodeEngine -a <orchestrator-ip> -d` - restarts and reconnects to cluster
+- This is more severe than network disconnects as it affects ALL containers and cluster connectivity
+- Each failure is followed by automatic recovery after the specified duration
+
+**Example Execution Plan:**
+```
+# Node 10.0.0.10 fails at 5 seconds for 10 seconds
+5000:node-stop:
+15000:node-start:
+# Node fails again at 35 seconds
+35000:node-stop:
+45000:node-start:
+60000:end:benchmark_complete
+```
+
+**Key Differences from Disconnect Scenario:**
+- **Disconnect**: Only blocks network traffic (iptables), containers continue running
+- **Node Failure**: Stops NodeEngine daemon, all containers become unavailable and may be rescheduled by Oakestra
 
 ## Command-Line Flags
 
 ### Global Flags
-- `--scenario=<type>` - Scenario type to run (default: "disconnect")
+- `--scenario=<type>` - Scenario type to run: "disconnect" or "node-failure" (default: "disconnect")
 - `--duration=<seconds>` - Total benchmark duration in seconds (default: 60)
+- `--exclude-nodes=<ips>` - Comma-separated list of node IPs to exclude from chaos operations (e.g., '10.0.0.10,10.0.0.11')
 
 ### Disconnect Scenario Flags
 - `--disconnect-nodes=<count>` - Number of nodes to disconnect (default: 1)
 - `--disconnect-duration=<seconds>` - Duration of each disconnect in seconds (default: 10)
 - `--disconnect-amount=<count>` - Number of times each node disconnects (default: 1)
 - `--full-disconnect=<bool>` - Full (true) or partial (false) disconnect (default: true)
+
+### Node Failure Scenario Flags
+- `--failure-nodes=<count>` - Number of nodes to fail (default: 1)
+- `--failure-duration=<seconds>` - Duration of each failure in seconds (default: 10)
+- `--failure-amount=<count>` - Number of times each node fails (default: 1)
 
 ## Usage Examples
 
@@ -195,6 +238,58 @@ go run ./lair \
   --disconnect-duration=60 \
   --duration=180 \
   --full-disconnect=true
+```
+
+### Node Failure Examples
+
+**Basic Node Failure:**
+```bash
+# 1 node fails once for 10 seconds during a 60-second benchmark
+go run ./lair --scenario=node-failure
+```
+
+**Multiple Node Failures:**
+```bash
+# 2 nodes fail, each failing 3 times for 15 seconds over 120 seconds
+go run ./lair \
+  --scenario=node-failure \
+  --failure-nodes=2 \
+  --failure-amount=3 \
+  --failure-duration=15 \
+  --duration=120
+```
+
+**Rolling Node Failures:**
+```bash
+# Simulate rolling node failures with brief downtime
+go run ./lair \
+  --scenario=node-failure \
+  --failure-nodes=1 \
+  --failure-amount=5 \
+  --failure-duration=8 \
+  --duration=180
+```
+
+**Extended Node Downtime:**
+```bash
+# Test application resilience to prolonged node failures
+go run ./lair \
+  --scenario=node-failure \
+  --failure-nodes=1 \
+  --failure-amount=1 \
+  --failure-duration=60 \
+  --duration=200
+```
+
+**Exclude Critical Nodes:**
+```bash
+# Fail nodes but exclude specific critical infrastructure nodes
+go run ./lair \
+  --scenario=node-failure \
+  --failure-nodes=2 \
+  --failure-duration=20 \
+  --duration=120 \
+  --exclude-nodes="10.0.0.10"
 ```
 
 ## Extending with New Scenarios
@@ -451,20 +546,33 @@ Plans are newline-separated strings with format: `timestamp:action:args`
 **Format:** `<milliseconds>:<action>:<arguments>`
 
 **Supported Actions:**
-- `block:<ip>` - Block traffic to IP address
-- `unblock:<ip>` - Unblock traffic to IP address
-- `delay:<ms>` - Add network delay in milliseconds
-- `loss:<percent>` - Add packet loss percentage
+- `block:<ip>` - Block traffic to IP address (iptables)
+- `unblock:<ip>` - Unblock traffic to IP address (iptables)
+- `delay:<ms>` - Add network delay in milliseconds (tc)
+- `loss:<percent>` - Add packet loss percentage (tc)
 - `mem:<mb>` - Reserve memory in MB
 - `cpu:<load>` - Apply CPU load (0.0-1.0)
+- `node-stop:` - Stop NodeEngine daemon (simulates complete node failure)
+- `node-start:` - Start NodeEngine daemon (recovers from failure)
+- `end:<message>` - Mark benchmark completion
 
-**Example Plan:**
+**Example Network Chaos Plan:**
 ```
 1000:block:10.0.0.11
 5000:delay:150
 10000:unblock:10.0.0.11
 15000:mem:512
 20000:cpu:0.8
+60000:end:benchmark_complete
+```
+
+**Example Node Failure Plan:**
+```
+5000:node-stop:
+15000:node-start:
+30000:node-stop:
+45000:node-start:
+60000:end:benchmark_complete
 ```
 
 ## Testing

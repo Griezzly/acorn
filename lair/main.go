@@ -21,13 +21,22 @@ const targetNodeCount = 5 // Set this to how many nodes you want to wait for
 
 // Command-line flags for benchmark configuration
 var (
-	scenarioType            = flag.String("scenario", "disconnect", "Benchmark scenario type (disconnect)")
-	duration                = flag.Int64("duration", 60, "Benchmark duration in seconds")
+	scenarioType = flag.String("scenario", "disconnect", "Benchmark scenario type (disconnect, node-failure)")
+	duration     = flag.Int64("duration", 60, "Benchmark duration in seconds")
+
+	// Disconnect scenario flags
 	disconnectNodeCount     = flag.Int("disconnect-nodes", 1, "Number of nodes to disconnect (disconnect scenario)")
 	disconnectDuration      = flag.Int64("disconnect-duration", 10, "Duration of each disconnect in seconds (disconnect scenario)")
 	fullDisconnect          = flag.Bool("full-disconnect", true, "Full disconnect vs partial (disconnect scenario)")
 	disconnectAmountPerNode = flag.Int("disconnect-amount", 1, "Number of disconnects per node (disconnect scenario)")
-	excludedNodeIPs         = flag.String("exclude-nodes", "", "Comma-separated list of node IPs to exclude from disconnection (e.g., '10.0.0.10,10.0.0.11')")
+
+	// Node failure scenario flags
+	failureNodeCount     = flag.Int("failure-nodes", 1, "Number of nodes to fail (node-failure scenario)")
+	failureDuration      = flag.Int64("failure-duration", 10, "Duration of each failure in seconds (node-failure scenario)")
+	failureAmountPerNode = flag.Int("failure-amount", 1, "Number of failures per node (node-failure scenario)")
+
+	// Common flags
+	excludedNodeIPs = flag.String("exclude-nodes", "", "Comma-separated list of node IPs to exclude from disconnection/failure (e.g., '10.0.0.10,10.0.0.11')")
 )
 
 type orchestratorServer struct {
@@ -225,6 +234,9 @@ func main() {
 		DisconnectDuration:      *disconnectDuration,
 		FullDisconnect:          *fullDisconnect,
 		DisconnectAmountPerNode: *disconnectAmountPerNode,
+		FailureNodeCount:        *failureNodeCount,
+		FailureDuration:         *failureDuration,
+		FailureAmountPerNode:    *failureAmountPerNode,
 		ExcludedNodeIPs:         excludedIPs,
 	}
 

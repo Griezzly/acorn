@@ -15,7 +15,8 @@ import (
 )
 
 type PlanExecutor struct {
-	logCollector *logcollector.LogCollector
+	logCollector   *logcollector.LogCollector
+	orchestratorIP string
 }
 
 func (p *PlanExecutor) BlockIP(ip string) error {
@@ -143,6 +144,31 @@ func (p *PlanExecutor) PingRTT(host string) {
 	}
 }
 
+// StopNodeEngine stops the NodeEngine daemon to simulate node failure.
+func (p *PlanExecutor) StopNodeEngine() error {
+	cmd := exec.Command("NodeEngine", "stop")
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("StopNodeEngine: failed to stop: %v", err))
+	} else {
+		p.logCollector.Add("StopNodeEngine: NodeEngine stopped successfully")
+	}
+	return err
+}
+
+// StartNodeEngine starts the NodeEngine daemon to recover from simulated failure.
+// Requires the orchestrator IP address to reconnect to the cluster.
+func (p *PlanExecutor) StartNodeEngine(orchestratorIP string) error {
+	cmd := exec.Command("NodeEngine", "-a", orchestratorIP, "-d")
+	err := cmd.Run()
+	if err != nil {
+		p.logCollector.Add(fmt.Sprintf("StartNodeEngine: failed to start: %v", err))
+	} else {
+		p.logCollector.Add(fmt.Sprintf("StartNodeEngine: NodeEngine started with orchestrator %s", orchestratorIP))
+	}
+	return err
+}
+
 func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 	// Start diagnostics monitoring during plan execution
 	monitorConfig := &logcollector.MonitoringConfig{
@@ -221,6 +247,10 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 				load, _ := strconv.ParseFloat(step.Args[0], 64)
 				go pe.LoadCPU(runtime.NumCPU(), load, 5*time.Second)
 			}
+		case "node-stop":
+			_ = pe.StopNodeEngine()
+		case "node-start":
+			_ = pe.StartNodeEngine(pe.orchestratorIP)
 		case "end":
 			// Log explicit benchmark termination
 			message := "benchmark_complete"

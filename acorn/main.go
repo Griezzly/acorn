@@ -72,7 +72,10 @@ func main() {
 	}
 
 	logCollector := &logcollector.LogCollector{}
-	executor := &PlanExecutor{logCollector: logCollector}
+	executor := &PlanExecutor{
+		logCollector:   logCollector,
+		orchestratorIP: "10.0.1.10", // Oakestra orchestrator private IP
+	}
 	nodeID = hostname // Use hostname as node ID
 
 	grpcServer := grpc.NewServer()

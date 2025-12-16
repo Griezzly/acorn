@@ -16,10 +16,20 @@ SSH_USER="root"
 # Default benchmark parameters
 SCENARIO_TYPE="disconnect"
 DURATION=60
+
+# Disconnect scenario defaults
 DISCONNECT_NODES=1
 DISCONNECT_DURATION=10
 FULL_DISCONNECT=true
 DISCONNECT_AMOUNT=1
+
+# Node failure scenario defaults
+FAILURE_NODES=1
+FAILURE_DURATION=10
+FAILURE_AMOUNT=1
+
+# Common options
+EXCLUDE_NODES=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -180,19 +190,44 @@ start_orchestrator() {
     local lair_cmd="cd $ACORN_DIR && nohup ./bin/lair"
     lair_cmd="$lair_cmd --scenario=$SCENARIO_TYPE"
     lair_cmd="$lair_cmd --duration=$DURATION"
-    lair_cmd="$lair_cmd --disconnect-nodes=$DISCONNECT_NODES"
-    lair_cmd="$lair_cmd --disconnect-duration=$DISCONNECT_DURATION"
-    lair_cmd="$lair_cmd --full-disconnect=$FULL_DISCONNECT"
-    lair_cmd="$lair_cmd --disconnect-amount=$DISCONNECT_AMOUNT"
+
+    # Add scenario-specific parameters
+    if [ "$SCENARIO_TYPE" = "disconnect" ]; then
+        lair_cmd="$lair_cmd --disconnect-nodes=$DISCONNECT_NODES"
+        lair_cmd="$lair_cmd --disconnect-duration=$DISCONNECT_DURATION"
+        lair_cmd="$lair_cmd --full-disconnect=$FULL_DISCONNECT"
+        lair_cmd="$lair_cmd --disconnect-amount=$DISCONNECT_AMOUNT"
+    elif [ "$SCENARIO_TYPE" = "node-failure" ]; then
+        lair_cmd="$lair_cmd --failure-nodes=$FAILURE_NODES"
+        lair_cmd="$lair_cmd --failure-duration=$FAILURE_DURATION"
+        lair_cmd="$lair_cmd --failure-amount=$FAILURE_AMOUNT"
+    fi
+
+    # Add common options
+    if [ -n "$EXCLUDE_NODES" ]; then
+        lair_cmd="$lair_cmd --exclude-nodes=$EXCLUDE_NODES"
+    fi
+
     lair_cmd="$lair_cmd > /tmp/lair.log 2>&1 &"
 
     log_info "Benchmark configuration:"
     log_info "  Scenario: $SCENARIO_TYPE"
     log_info "  Duration: ${DURATION}s"
-    log_info "  Disconnect nodes: $DISCONNECT_NODES"
-    log_info "  Disconnect duration: ${DISCONNECT_DURATION}s"
-    log_info "  Full disconnect: $FULL_DISCONNECT"
-    log_info "  Disconnect amount: $DISCONNECT_AMOUNT"
+
+    if [ "$SCENARIO_TYPE" = "disconnect" ]; then
+        log_info "  Disconnect nodes: $DISCONNECT_NODES"
+        log_info "  Disconnect duration: ${DISCONNECT_DURATION}s"
+        log_info "  Full disconnect: $FULL_DISCONNECT"
+        log_info "  Disconnect amount: $DISCONNECT_AMOUNT"
+    elif [ "$SCENARIO_TYPE" = "node-failure" ]; then
+        log_info "  Failure nodes: $FAILURE_NODES"
+        log_info "  Failure duration: ${FAILURE_DURATION}s"
+        log_info "  Failure amount: $FAILURE_AMOUNT"
+    fi
+
+    if [ -n "$EXCLUDE_NODES" ]; then
+        log_info "  Excluded nodes: $EXCLUDE_NODES"
+    fi
 
     # Start lair in background with parameters
     if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$SSH_USER@$ORCHESTRATOR_IP" "$lair_cmd"; then
@@ -367,6 +402,22 @@ main() {
                 DISCONNECT_AMOUNT="$2"
                 shift 2
                 ;;
+            --failure-nodes)
+                FAILURE_NODES="$2"
+                shift 2
+                ;;
+            --failure-duration)
+                FAILURE_DURATION="$2"
+                shift 2
+                ;;
+            --failure-amount)
+                FAILURE_AMOUNT="$2"
+                shift 2
+                ;;
+            --exclude-nodes)
+                EXCLUDE_NODES="$2"
+                shift 2
+                ;;
             --help|-h)
                 echo "Usage: $0 [OPTIONS]"
                 echo ""
@@ -376,17 +427,36 @@ main() {
                 echo "  --collect-logs           Only collect logs, don't run benchmark"
                 echo ""
                 echo "Benchmark Configuration:"
-                echo "  --scenario <type>        Scenario type (default: disconnect)"
+                echo "  --scenario <type>        Scenario type: 'disconnect' or 'node-failure' (default: disconnect)"
                 echo "  --duration <seconds>     Benchmark duration in seconds (default: 60)"
+                echo "  --exclude-nodes <ips>    Comma-separated IPs to exclude (e.g., '10.0.0.10,10.0.0.11')"
+                echo ""
+                echo "Disconnect Scenario Options:"
                 echo "  --disconnect-nodes <n>   Number of nodes to disconnect (default: 1)"
                 echo "  --disconnect-duration <s> Duration of each disconnect in seconds (default: 10)"
                 echo "  --full-disconnect <bool> Full or partial disconnect (default: true)"
                 echo "  --disconnect-amount <n>  Number of disconnects per node (default: 1)"
                 echo ""
+                echo "Node Failure Scenario Options:"
+                echo "  --failure-nodes <n>      Number of nodes to fail (default: 1)"
+                echo "  --failure-duration <s>   Duration of each failure in seconds (default: 10)"
+                echo "  --failure-amount <n>     Number of failures per node (default: 1)"
+                echo ""
                 echo "Examples:"
-                echo "  $0                                    # Run with default settings"
-                echo "  $0 --duration=120 --disconnect-nodes=2"
+                echo "  # Disconnect scenario (default)"
+                echo "  $0                                    # 1 node disconnect, 60s"
+                echo "  $0 --duration=120 --disconnect-nodes=2 --disconnect-amount=3"
                 echo "  $0 --full-disconnect=false --disconnect-amount=3"
+                echo ""
+                echo "  # Node failure scenario"
+                echo "  $0 --scenario=node-failure            # 1 node fails, 60s"
+                echo "  $0 --scenario=node-failure --failure-nodes=2 --failure-duration=15"
+                echo "  $0 --scenario=node-failure --failure-amount=3 --duration=180"
+                echo ""
+                echo "  # With exclusions"
+                echo "  $0 --scenario=node-failure --exclude-nodes='10.0.0.10'"
+                echo ""
+                echo "  # Automation options"
                 echo "  $0 --skip-pull --skip-build          # Quick re-run"
                 exit 0
                 ;;
