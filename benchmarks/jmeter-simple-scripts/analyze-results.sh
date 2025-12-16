@@ -91,9 +91,9 @@ fi
 echo "Generated: $(date)"
 echo ""
 
-# Check if file has recovery metrics
+# Check if file has recovery metrics (with or without quotes)
 HAS_RECOVERY_METRICS=false
-if head -1 "$JTL_FILE" | grep -q "SERVICE_AVAILABLE"; then
+if head -1 "$JTL_FILE" | grep -qE '(SERVICE_AVAILABLE|"SERVICE_AVAILABLE")'; then
     HAS_RECOVERY_METRICS=true
 else
     echo -e "${YELLOW}Note: Recovery metrics not found in this JTL file.${NC}"
@@ -189,13 +189,13 @@ if [ "$HAS_RECOVERY_METRICS" = true ]; then
     echo -e "${BLUE}=== Recovery Metrics ===${NC}"
     echo ""
 
-    # Find column indices for recovery metrics
+    # Find column indices for recovery metrics (handle both quoted and unquoted column names)
     HEADER=$(head -1 "$JTL_FILE")
-    SERVICE_AVAILABLE_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="SERVICE_AVAILABLE") print i}')
-    CONSECUTIVE_FAILURES_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="CONSECUTIVE_FAILURES") print i}')
-    LAST_RECOVERY_TIME_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="LAST_RECOVERY_TIME_MS") print i}')
-    TOTAL_OUTAGES_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="TOTAL_OUTAGES") print i}')
-    CURRENT_OUTAGE_DURATION_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="CURRENT_OUTAGE_DURATION_MS") print i}')
+    SERVICE_AVAILABLE_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="SERVICE_AVAILABLE" || $i=="\"SERVICE_AVAILABLE\"") print i}')
+    CONSECUTIVE_FAILURES_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="CONSECUTIVE_FAILURES" || $i=="\"CONSECUTIVE_FAILURES\"") print i}')
+    LAST_RECOVERY_TIME_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="LAST_RECOVERY_TIME_MS" || $i=="\"LAST_RECOVERY_TIME_MS\"") print i}')
+    TOTAL_OUTAGES_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="TOTAL_OUTAGES" || $i=="\"TOTAL_OUTAGES\"") print i}')
+    CURRENT_OUTAGE_DURATION_COL=$(echo "$HEADER" | awk -F',' '{for(i=1;i<=NF;i++) if($i=="CURRENT_OUTAGE_DURATION_MS" || $i=="\"CURRENT_OUTAGE_DURATION_MS\"") print i}')
 
     # Verify we found the columns
     if [ -z "$TOTAL_OUTAGES_COL" ]; then
@@ -205,23 +205,32 @@ if [ "$HAS_RECOVERY_METRICS" = true ]; then
 fi
 
 if [ "$HAS_RECOVERY_METRICS" = true ]; then
-    # Total outages
-    TOTAL_OUTAGES=$(awk -F',' -v col="$TOTAL_OUTAGES_COL" 'NR>1 && $col>max {max=$col} END {print max+0}' "$JTL_FILE")
+    # Total outages (filter out null/empty values)
+    TOTAL_OUTAGES=$(awk -F',' -v col="$TOTAL_OUTAGES_COL" 'NR>1 {if($col ~ /^[0-9]+$/ && $col>max) max=$col} END {print max+0}' "$JTL_FILE")
 echo "Total Outages Detected: $TOTAL_OUTAGES"
 
-# Recovery times
+# Recovery times (only count when TOTAL_OUTAGES increments)
 if [ "$TOTAL_OUTAGES" -gt 0 ]; then
     echo ""
     echo "Recovery Times:"
-    awk -F',' -v col="$LAST_RECOVERY_TIME_COL" '
-        NR>1 && $col>0 && prev!=$col {
-            printf "  Outage #%d: %.2f seconds (%s ms)\n", ++count, $col/1000, $col
-            sum+=$col
-            if ($col > max) max=$col
-            if (min==0 || $col < min) min=$col
-            prev=$col
+    awk -F',' -v rt_col="$LAST_RECOVERY_TIME_COL" -v out_col="$TOTAL_OUTAGES_COL" '
+        NR>1 && $rt_col ~ /^[0-9]+$/ && $rt_col>0 && $out_col ~ /^[0-9]+$/ {
+            outage_id = $out_col
+            if (outage_id > 0 && !seen[outage_id] && $rt_col > 0) {
+                seen[outage_id] = 1
+                recovery_times[outage_id] = $rt_col
+            }
         }
         END {
+            for (i=1; i<=length(recovery_times); i++) {
+                if (recovery_times[i] > 0) {
+                    printf "  Outage #%d: %.2f seconds (%d ms)\n", i, recovery_times[i]/1000, recovery_times[i]
+                    sum += recovery_times[i]
+                    count++
+                    if (recovery_times[i] > max || max == 0) max = recovery_times[i]
+                    if (recovery_times[i] < min || min == 0) min = recovery_times[i]
+                }
+            }
             if (count>0) {
                 printf "\n"
                 printf "  Average Recovery Time: %.2f seconds\n", sum/count/1000
@@ -236,8 +245,8 @@ fi
 
 echo ""
 
-# Maximum outage duration
-MAX_OUTAGE_DURATION=$(awk -F',' -v col="$CURRENT_OUTAGE_DURATION_COL" 'NR>1 && $col>max {max=$col} END {print max+0}' "$JTL_FILE")
+# Maximum outage duration (filter out null/empty values)
+MAX_OUTAGE_DURATION=$(awk -F',' -v col="$CURRENT_OUTAGE_DURATION_COL" 'NR>1 {if($col ~ /^[0-9]+$/ && $col>max) max=$col} END {print max+0}' "$JTL_FILE")
 if [ "$MAX_OUTAGE_DURATION" -gt 0 ]; then
     MAX_OUTAGE_SEC=$(awk "BEGIN {printf \"%.2f\", $MAX_OUTAGE_DURATION/1000}")
     echo "Maximum Continuous Outage Duration: ${MAX_OUTAGE_SEC}s (${MAX_OUTAGE_DURATION}ms)"
@@ -274,18 +283,29 @@ if [ "$TOTAL_OUTAGES" -gt 0 ]; then
                 outage_start=$1
                 outage_num++
                 outage_active=1
-                printf "[%s] Outage #%d started\n", strftime("%Y-%m-%d %H:%M:%S", $1/1000), outage_num
+                printf "[TS:%d] Outage #%d started\n", $1, outage_num
             }
             if ($sa_col=="true" && outage_active && $rt_col>0 && prev_rt!=$rt_col) {
                 recovery_time = $1 - outage_start
-                printf "[%s] Outage #%d ended (Duration: %.2fs, Recovery: %.2fs)\n",
-                    strftime("%Y-%m-%d %H:%M:%S", $1/1000), outage_num,
+                printf "[TS:%d] Outage #%d ended (Duration: %.2fs, Recovery: %.2fs)\n",
+                    $1, outage_num,
                     recovery_time/1000, $rt_col/1000
                 outage_active=0
                 prev_rt=$rt_col
             }
         }
-    ' "$JTL_FILE"
+    ' "$JTL_FILE" | while IFS= read -r line; do
+        # Extract timestamp and format with date command
+        if [[ "$line" =~ \[TS:([0-9]+)\](.+) ]]; then
+            TS="${BASH_REMATCH[1]}"
+            REST="${BASH_REMATCH[2]}"
+            TS_SEC=$((TS / 1000))
+            FORMATTED=$(date -r "$TS_SEC" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "TS:$TS")
+            echo "[$FORMATTED]$REST"
+        else
+            echo "$line"
+        fi
+    done
 else
     echo "No outages occurred during this test."
 fi
@@ -295,8 +315,8 @@ echo ""
 echo -e "${BLUE}=== Failure Analysis ===${NC}"
 echo ""
 
-# Peak consecutive failures
-PEAK_FAILURES=$(awk -F',' -v col="$CONSECUTIVE_FAILURES_COL" 'NR>1 && $col>max {max=$col} END {print max+0}' "$JTL_FILE")
+# Peak consecutive failures (filter out null/empty values)
+PEAK_FAILURES=$(awk -F',' -v col="$CONSECUTIVE_FAILURES_COL" 'NR>1 {if($col ~ /^[0-9]+$/ && $col>max) max=$col} END {print max+0}' "$JTL_FILE")
 echo "Peak Consecutive Failures: $PEAK_FAILURES"
 
 # Response code distribution for failures

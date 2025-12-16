@@ -70,6 +70,124 @@ Example Usage:
 ./analyze-jmeter-results.sh results.jtl "" 1765301586275495512
 ```
 
+#### Metrics Reported
+
+  ---
+
+Total Samples
+- Count of all requests in the JTL file (excluding header)
+- awk -F',' 'END {print NR-1}'
+
+Successful/Failed Requests
+- Success: Rows where column 8 (success field) == "true"
+- Failed: Rows where column 8 == "false"
+
+Success Rate
+- (Successful Requests / Total Samples) * 100
+
+Test Duration
+- Last timestamp - First timestamp (from column 1)
+- Shown in minutes, seconds, and milliseconds
+
+Throughput
+- Total Samples / Duration in seconds
+- Requests per second
+
+  ---
+Performance Metrics
+
+Response Times (column 2: elapsed)
+- Average, Min, Max of response time for successful requests only
+- Time from sending request to receiving complete response
+
+Latency (column 15: Latency)
+- Average, Min, Max of time to first byte for successful requests
+- Network latency - time until first byte received
+
+Request Type Distribution
+- Count by request label (column 3)
+- Shows breakdown: Login, QueryFlight, BookFlight, etc.
+
+  ---
+Recovery Metrics
+
+Total Outages Detected (column 24: TOTAL_OUTAGES)
+- Maximum value found across all rows
+- Filters out "null" and non-numeric values
+- Each endpoint (QueryFlight, Login, etc.) has its own circuit breaker counter
+
+Recovery Times (column 23: LAST_RECOVERY_TIME_MS)
+- Time it took for the health check to succeed after circuit breaker opened
+- Collected once per outage (when TOTAL_OUTAGES increments)
+- Shows: Average, Fastest, Slowest
+
+Maximum Continuous Outage Duration (column 25: CURRENT_OUTAGE_DURATION_MS)
+- Longest period any circuit breaker was continuously open
+- Maximum value across all rows
+
+Total Downtime (column 21: SERVICE_AVAILABLE)
+- Sum of elapsed time (response time) for all requests where SERVICE_AVAILABLE == "false"
+- Represents time spent with circuit breaker(s) open
+- Shown as seconds and percentage of test duration
+
+Service Availability
+- 100% - (Total Downtime / Test Duration) * 100
+- Percentage of time service was available
+
+  ---
+Outage Timeline
+
+Aggregated Service State Transitions
+- Tracks when SERVICE_AVAILABLE changes from "true" → "false" (service unavailable)
+- Tracks when SERVICE_AVAILABLE changes from "false" → "true" (service recovered)
+- Shows timestamps and duration of each unavailability window
+- Aggregated view: ANY endpoint circuit breaker open = service unavailable
+
+  ---
+Failure Analysis
+
+Peak Consecutive Failures (column 22: CONSECUTIVE_FAILURES)
+- Maximum value of consecutive failure counter
+- Shows how many failures in a row before circuit breaker opened
+
+Failed Request Response Codes (column 4: responseCode)
+- Distribution of HTTP status codes for failed requests
+- e.g., 403, 500, 504, SocketTimeoutException
+
+  ---
+Summary / RTO Assessment
+
+Average Recovery Time
+- Mean of all LAST_RECOVERY_TIME_MS values across outages
+
+RTO (Recovery Time Objective) Assessment
+- ✓ Excellent: < 60 seconds
+- ⚠ Acceptable: < 5 minutes
+- ✗ Needs Improvement: > 5 minutes
+
+Availability Assessment
+- ✓ Excellent: ≥ 99.9% (three nines)
+- ⚠ Good: ≥ 99.0%
+- ✗ Needs Improvement: < 99%
+
+  ---
+Key Columns Reference
+
+| Column | Name                       | Description                             |
+  |--------|----------------------------|-----------------------------------------|
+| 1      | timeStamp                  | Request timestamp (ms since epoch)      |
+| 2      | elapsed                    | Response time (ms)                      |
+| 3      | label                      | Request type (Login, QueryFlight, etc.) |
+| 4      | responseCode               | HTTP status code                        |
+| 8      | success                    | true/false                              |
+| 15     | Latency                    | Time to first byte (ms)                 |
+| 21     | SERVICE_AVAILABLE          | Circuit breaker state (true/false)      |
+| 22     | CONSECUTIVE_FAILURES       | Failure counter                         |
+| 23     | LAST_RECOVERY_TIME_MS      | Health check success time               |
+| 24     | TOTAL_OUTAGES              | Outage counter                          |
+| 25     | CURRENT_OUTAGE_DURATION_MS | Current outage elapsed time             |
+
+----
 ## Environment Variables
 
 | Variable | Default | Description |
