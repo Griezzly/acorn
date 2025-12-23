@@ -178,7 +178,7 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 	_ = pe.logCollector.StartMonitoring(monitorConfig)
 	defer pe.logCollector.StopMonitoring()
 
-	executionStartTime := time.Now()
+	executionStartTime := time.Unix(0, plan.StartTime)
 	pe.logCollector.Add(fmt.Sprintf("[BENCHMARK_START] node_id=%s plan_start_time=%d execution_start=%d",
 		plan.NodeId, plan.StartTime, executionStartTime.UnixNano()))
 
@@ -206,7 +206,7 @@ func (pe *PlanExecutor) Execute(plan *pb.ExecutionPlan) {
 		return steps[i].Timestamp < steps[j].Timestamp
 	})
 
-	start := time.Now()
+	start := executionStartTime
 	for _, step := range steps {
 		scheduled := start.Add(time.Duration(step.Timestamp) * time.Millisecond)
 		wait := time.Until(scheduled)
